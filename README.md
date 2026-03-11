@@ -350,13 +350,6 @@ export class MyProvider implements LLMProvider {
 ## 🤝 贡献
 
 我们欢迎所有形式的贡献！查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何参与。
-
-### 🏆 贡献者福利
-
-- **核心贡献者**: 股权激励（0.1%-1%）
-- **早期贡献者**: 终身免费使用企业版
-- **推荐客户**: 20% 佣金分成
-
 ### 🎯 当前优先任务
 
 1. **解决 AutoClaw Skill 加载问题** - 让 Guardian 能真正拦截命令
@@ -368,13 +361,6 @@ export class MyProvider implements LLMProvider {
 ## 许可证
 
 [MIT License](LICENSE) - 让全世界人民都能用上 AI 安全防护！
-
-## 联系方式
-
-- 📧 Email: team@ai-guardian.io
-- 💬 Discord: [加入社区](https://discord.gg/ai-guardian)
-- 🐦 Twitter: [@AIGuardian](https://twitter.com/AIGuardian)
-- 🐙 GitHub Issues: [提交问题](https://github.com/your-org/ai-guardian/issues)
 
 ---
 
