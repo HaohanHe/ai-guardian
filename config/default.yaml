@@ -1,0 +1,161 @@
+# AI Guardian 默认配置
+# AI Agent 数字孪生防御系统
+
+# 系统名称和版本
+name: AI Guardian
+version: 0.1.0
+description: AI Agent 数字孪生防御系统 - AI 界的 360/金山毒霸
+
+# 决策阈值配置
+# 风险评分 0-100，分为三个区间
+decision:
+  thresholds:
+    allow: 30      # 0-30: 全自动放行
+    observe: 70    # 31-70: 半自动观察
+    deny: 100      # 71-100: 手动拦截
+
+# MCP 拦截层配置
+mcp:
+  # 监听端口
+  port: 3000
+  host: 127.0.0.1
+  
+  # 目标 MCP 服务端点
+  # 这里配置 OpenClaw 或其他 MCP 服务的地址
+  targetEndpoint: http://localhost:3001
+  
+  # 拦截的工具类型
+  interceptedTools:
+    - exec
+    - browser
+    - read
+    - write
+    - edit
+
+# 推演预判引擎配置
+simulation:
+  # 最大推演时间 (毫秒)
+  maxDuration: 100
+  
+  # 是否启用详细推演
+  detailed: true
+  
+  # 命令解析配置
+  parser:
+    # 支持的 shell 类型
+    shells:
+      - bash
+      - sh
+      - zsh
+      - cmd
+      - powershell
+
+# 风险分析引擎配置
+riskAnalysis:
+  # 危险命令模式
+  dangerousPatterns:
+    - 'rm -rf /'
+    - 'rm -rf /*'
+    - 'rm -rf ~'
+    - 'dd if=/dev/zero'
+    - 'mkfs'
+    - ':(){ :|:& };:'
+    - 'eval $(curl'
+    - 'curl .* | bash'
+    - 'wget .* | bash'
+  
+  # 敏感路径模式
+  sensitivePaths:
+    - '~/.ssh'
+    - '/etc/shadow'
+    - '/etc/passwd'
+    - '/etc/sudoers'
+    - '.env'
+    - 'id_rsa'
+    - '.pem'
+    - 'password'
+    - 'secret'
+    - 'token'
+    - 'credential'
+  
+  # 权重配置
+  weights:
+    commandType: 0.20
+    permissionEscalation: 0.25
+    dataExfiltration: 0.25
+    persistence: 0.15
+    network: 0.10
+    context: 0.05
+
+# 上下文感知配置
+context:
+  # 最大历史记录数
+  maxHistorySize: 100
+  
+  # 上下文时间窗口 (毫秒)
+  windowMs: 60000
+  
+  # 高频操作阈值 (10秒内操作次数)
+  highFrequencyThreshold: 3
+
+# 执法记录仪配置
+audit:
+  # 日志文件路径
+  logPath: ./logs/audit.log
+  
+  # 单个日志文件最大大小 (字节)
+  maxFileSize: 10485760  # 10MB
+  
+  # 最大保留文件数
+  maxFiles: 10
+  
+  # 是否启用数字签名
+  enableSignature: true
+  
+  # 远程备份配置 (可选)
+  remoteBackup:
+    enabled: false
+    endpoint: ''
+    apiKey: ''
+
+# LLM 配置 (可选)
+# 如果不配置，将使用纯规则引擎
+llm:
+  # 提供商: mimoflash | ollama | openai
+  provider: ollama
+  
+  # API 配置
+  apiKey: ''
+  baseUrl: http://localhost:11434
+  
+  # 模型名称
+  model: llama2
+  
+  # 生成参数
+  temperature: 0
+  maxTokens: 500
+  
+  # 是否启用缓存
+  enableCache: true
+
+# 日志配置
+logging:
+  # 日志级别: debug | info | warn | error
+  level: info
+  
+  # 是否输出到控制台
+  console: true
+  
+  # 是否输出到文件
+  file: true
+  
+  # 日志文件路径
+  filePath: ./logs/guardian.log
+
+# 性能配置
+performance:
+  # 最大并发评估数
+  maxConcurrency: 10
+  
+  # 评估超时时间 (毫秒)
+  timeout: 5000

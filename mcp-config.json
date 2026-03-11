@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "ai-guardian": {
+      "command": "node",
+      "args": [
+        "e:/debot/ai-guardian/dist/mcp-server.js"
+      ],
+      "env": {
+        "AI_GUARDIAN_URL": "http://localhost:3456",
+        "AI_GUARDIAN_TOKEN": "your-token-here",
+        "AI_GUARDIAN_THRESHOLD": "70",
+        "AI_GUARDIAN_AUTO_BLOCK": "true"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}

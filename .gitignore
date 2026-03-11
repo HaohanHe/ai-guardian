@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Config files with sensitive data
+config/llm.json
+config/*.local.json
+
+# OpenClaw/AutoClaw specific
+.openclaw/
+.openclaw-autoclaw/
+
+# Test targets (for development)
+test-targets/

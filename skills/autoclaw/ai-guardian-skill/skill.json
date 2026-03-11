@@ -1,0 +1,33 @@
+{
+  "id": "ai-guardian",
+  "name": "AI Guardian",
+  "description": "AI Agent 安全防御系统 - 实时监控、风险评估、自动阻断",
+  "version": "1.0.0",
+  "author": "AI Guardian Team",
+  "license": "MIT",
+  "entry": "index.ts",
+  "config": {
+    "guardianUrl": {
+      "type": "string",
+      "default": "http://localhost:3456",
+      "description": "AI Guardian 服务地址"
+    },
+    "guardianToken": {
+      "type": "string",
+      "description": "AI Guardian API Token"
+    },
+    "alertThreshold": {
+      "type": "number",
+      "default": 70,
+      "description": "风险告警阈值 (0-100)"
+    },
+    "autoBlock": {
+      "type": "boolean",
+      "default": true,
+      "description": "自动阻断高危命令"
+    }
+  },
+  "hooks": [
+    "before_tool_call"
+  ]
+}

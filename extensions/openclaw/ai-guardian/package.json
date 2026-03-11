@@ -1,0 +1,32 @@
+{
+  "name": "@openclaw/ai-guardian",
+  "version": "1.0.0",
+  "description": "AI Agent 安全防御系统 - AI界的360/金山毒霸",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "openclaw",
+    "extension",
+    "security",
+    "ai-guardian",
+    "agent-protection"
+  ],
+  "author": "AI Guardian Team",
+  "license": "MIT",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "install": {
+      "localPath": "extensions/ai-guardian",
+      "defaultChoice": "local"
+    }
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "typescript": "^5.9.3"
+  }
+}

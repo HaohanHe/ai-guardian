@@ -1,0 +1,56 @@
+{
+  "id": "ai-guardian",
+  "name": "AI Guardian",
+  "description": "AI Agent 安全防御系统 - 实时监控、风险评估、自动阻断",
+  "version": "1.0.0",
+  "author": "AI Guardian Team",
+  "license": "MIT",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用 AI Guardian 保护"
+      },
+      "guardianUrl": {
+        "type": "string",
+        "default": "http://localhost:3456",
+        "description": "AI Guardian 服务地址"
+      },
+      "guardianToken": {
+        "type": "string",
+        "description": "AI Guardian API Token"
+      },
+      "alertThreshold": {
+        "type": "number",
+        "default": 70,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "风险告警阈值 (0-100)"
+      },
+      "autoBlock": {
+        "type": "boolean",
+        "default": true,
+        "description": "自动阻断高危命令"
+      },
+      "silentMode": {
+        "type": "boolean",
+        "default": true,
+        "description": "静默模式（只告警高危命令）"
+      }
+    }
+  },
+  "uiHints": {
+    "guardianToken": {
+      "label": "Guardian Token",
+      "sensitive": true,
+      "help": "从 AI Guardian 服务获取的 API Token"
+    },
+    "alertThreshold": {
+      "label": "告警阈值",
+      "help": "风险分数超过此值时触发告警 (0-100)"
+    }
+  }
+}

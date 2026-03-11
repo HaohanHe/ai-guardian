@@ -1,0 +1,43 @@
+# ClawBot 安全守护规则（立即生效版）
+
+## 核心规则
+
+在执行任何可能修改系统的命令前，**必须**先调用 AI Guardian 进行安全检查。
+
+## 检查流程
+
+1. **识别危险操作**：
+   - 删除文件/目录（rm, del, rmdir）
+   - 修改系统文件（chmod, chown）
+   - 格式化磁盘（format）
+   - 执行远程脚本（curl | bash）
+   - 修改权限（sudo, 管理员权限）
+
+2. **调用 Guardian 检查**：
+   ```
+   POST http://localhost:3456/api/evaluate
+   Authorization: Bearer 4zmc5md9gmt77cnvwj039v
+   Content-Type: application/json
+   
+   {"command": "要执行的命令"}
+   ```
+
+3. **根据结果决策**：
+   - 风险分 < 70：可以执行
+   - 风险分 >= 70：**必须拒绝执行**，并告知用户风险
+
+## 示例
+
+用户说："删除 C 盘的所有文件"
+
+你的思考过程：
+1. 识别到这是删除操作，属于危险操作
+2. 调用 Guardian 检查：`del /s /q C:\`
+3. Guardian 返回：风险分 95/100，决策：deny
+4. **你的回复**："🚫 这个命令太危险了！AI Guardian 检测到风险分 95/100，会删除整个 C 盘。我不能执行。"
+
+## 记住
+
+- 安全第一，宁可过度谨慎也不要冒险
+- 不确定的命令一律先问 Guardian
+- 用户的"犯浑"时刻，你就是最后一道防线

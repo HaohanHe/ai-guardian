@@ -1,0 +1,50 @@
+{
+  "name": "ai-guardian",
+  "version": "0.1.0",
+  "description": "AI Agent 数字孪生防御系统 - AI 界的 360/金山毒霸",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "ai-guardian": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chalk": "^5.3.0",
+    "commander": "^11.0.0",
+    "express": "^4.18.0",
+    "ws": "^8.14.0",
+    "yaml": "^2.3.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.2.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai-security",
+    "agent-defense",
+    "mcp",
+    "digital-twin",
+    "openclaw",
+    "ai-guardian"
+  ],
+  "author": "AI Guardian Team",
+  "license": "MIT"
+}
