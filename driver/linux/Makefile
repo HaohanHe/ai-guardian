@@ -28,6 +28,9 @@ LINUX_HEADERS ?= $(call find-kernel-headers)
 # Basic kernel headers (usually /usr/include on most systems)
 KERNEL_HEADERS ?= /usr/include
 
+# Allow skipping eBPF build in CI environment
+SKIP_EBPF_BUILD ?= no
+
 # Validate kernel headers path
 ifeq ($(LINUX_HEADERS),)
     $(error Unable to locate kernel headers. Please install kernel headers for your distribution, or set LINUX_HEADERS environment variable. Common locations: /usr/src/linux-headers-$(KERNEL_RELEASE), /usr/src/kernels/$(KERNEL_RELEASE), /lib/modules/$(KERNEL_RELEASE)/build)
@@ -48,45 +51,61 @@ BPF_CFLAGS := -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
     -I/usr/include/bpf \
     -Wall -g
 
-.PHONY: all clean vmlinux info
+.PHONY: all clean vmlinux info check-bpftool
 
-all: vmlinux $(BPF_OBJ)
+# Default target
+all: check-bpftool $(BPF_OBJ)
+
+# Check if we can build eBPF
+check-bpftool:
+ifeq ($(SKIP_EBPF_BUILD),yes)
+	@echo "Skipping eBPF build (SKIP_EBPF_BUILD=yes)"
+	@exit 0
+else
+	@if ! command -v $(BPFTOOL) >/dev/null 2>&1; then \
+		echo "Warning: bpftool not found. eBPF build will be skipped."; \
+		echo "To force build, install: linux-tools-$(KERNEL_RELEASE) or linux-tools-generic"; \
+	fi
+endif
 
 # Generate vmlinux.h from kernel BTF
 vmlinux.h:
+ifeq ($(SKIP_EBPF_BUILD),yes)
+	@echo "Skipping vmlinux.h generation (SKIP_EBPF_BUILD=yes)"
+else
 	@if [ -f /sys/kernel/btf/vmlinux ]; then \
 		if command -v $(BPFTOOL) >/dev/null 2>&1; then \
 			echo "Generating vmlinux.h from kernel BTF..."; \
 			$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h; \
 		else \
-			echo "Warning: bpftool not found, trying to use system vmlinux.h"; \
-			if [ -f $(LINUX_HEADERS)/include/vmlinux.h ]; then \
-				cp $(LINUX_HEADERS)/include/vmlinux.h .; \
-			else \
-				echo "Error: vmlinux.h not found. Please install bpftool or kernel headers."; \
-				exit 1; \
-			fi \
+			echo "Warning: bpftool not found, creating minimal vmlinux.h..."; \
+			echo "/* Minimal vmlinux.h - bpftool not available */" > vmlinux.h; \
+			echo "#ifndef __VMLINUX_H__" >> vmlinux.h; \
+			echo "#define __VMLINUX_H__" >> vmlinux.h; \
+			echo "#include <linux/types.h>" >> vmlinux.h; \
+			echo "#endif" >> vmlinux.h; \
 		fi \
 	else \
-		echo "Error: /sys/kernel/btf/vmlinux not found. Kernel BTF support required."; \
-		exit 1; \
+		echo "Warning: /sys/kernel/btf/vmlinux not found. Creating minimal vmlinux.h..."; \
+		echo "/* Minimal vmlinux.h - BTF not available */" > vmlinux.h; \
+		echo "#ifndef __VMLINUX_H__" >> vmlinux.h; \
+		echo "#define __VMLINUX_H__" >> vmlinux.h; \
+		echo "#include <linux/types.h>" >> vmlinux.h; \
+		echo "#endif" >> vmlinux.h; \
 	fi
+endif
 
 # Compile eBPF program
 $(BPF_OBJ): $(BPF_SRC) vmlinux.h
+ifeq ($(SKIP_EBPF_BUILD),yes)
+	@echo "Skipping eBPF compilation (SKIP_EBPF_BUILD=yes)"
+	@touch $(BPF_OBJ)
+else
 	@echo "Compiling eBPF program: $<"
 	@echo "Using kernel headers: $(LINUX_HEADERS)"
-	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
+	$(CLANG) $(BPF_CFLAGS) -c $< -o $@ || (echo "eBPF compilation failed. Set SKIP_EBPF_BUILD=yes to skip." && exit 1)
 	@echo "eBPF program compiled: $@"
-
-# Generate vmlinux.h if needed (requires bpftool)
-vmlinux:
-	@if command -v $(BPFTOOL) >/dev/null 2>&1; then \
-		echo "Generating vmlinux.h..."; \
-		$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h; \
-	else \
-		echo "Warning: bpftool not found, skipping vmlinux.h generation"; \
-	fi
+endif
 
 # Clean build artifacts
 clean:
@@ -107,3 +126,4 @@ info:
 	@echo "BPF object: $(BPF_OBJ)"
 	@echo "Kernel headers: $(LINUX_HEADERS)"
 	@echo "Basic headers: $(KERNEL_HEADERS)"
+	@echo "SKIP_EBPF_BUILD: $(SKIP_EBPF_BUILD)"
