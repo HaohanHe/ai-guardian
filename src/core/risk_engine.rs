@@ -108,10 +108,13 @@ impl RiskEngine {
 
     /// 计算风险分数
     pub fn calculate_risk(&mut self, event: &OperationEvent) -> u32 {
+        // 1. 先记录行为历史（确保频率检测能包含当前操作）
+        self.record_behavior(event, 0);
+
         let mut total_score = 0;
         let mut triggered_rules = Vec::new();
 
-        // 1. 评估规则匹配
+        // 2. 评估规则匹配
         for rule in &self.rules {
             if !rule.enabled {
                 continue;
@@ -123,17 +126,17 @@ impl RiskEngine {
             }
         }
 
-        // 2. 上下文分析（基于历史行为）
+        // 3. 上下文分析（基于历史行为）
         let context_score = self.analyze_context(event);
         total_score += context_score;
 
-        // 3. 更新行为历史
-        self.record_behavior(event, total_score);
+        // 4. 更新历史记录的风险分数
+        self.update_behavior_risk_score(event, total_score);
 
-        // 4. 更新进程画像
+        // 5. 更新进程画像
         self.update_process_profile(event, total_score);
 
-        // 5. 应用衰减（同一进程的重复操作风险递减）
+        // 6. 应用衰减（同一进程的重复操作风险递减）
         let decayed_score = self.apply_decay(event.process_id, total_score);
 
         // 限制在 0-100
@@ -274,6 +277,22 @@ impl RiskEngine {
         // 保持历史记录在限制范围内
         while history.len() > self.max_history {
             history.pop_front();
+        }
+    }
+
+    /// 更新最近一条行为记录的风险分数
+    fn update_behavior_risk_score(&self, event: &OperationEvent, risk_score: u32) {
+        let mut history = self.behavior_history.lock().unwrap();
+
+        // 找到最近匹配的行为记录并更新风险分数
+        for record in history.iter_mut().rev() {
+            if record.process_id == event.process_id
+                && record.operation_type == event.operation_type
+                && record.target == event.target_path.clone().unwrap_or_default()
+            {
+                record.risk_score = risk_score;
+                break;
+            }
         }
     }
 
