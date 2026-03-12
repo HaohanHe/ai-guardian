@@ -152,12 +152,12 @@ impl AiGuardian {
     }
 
     /// 检查进程是否是 AI 终端
-    pub fn is_ai_terminal(&self, pid: u32) -> bool {
+    pub fn is_ai_terminal(&self, _pid: u32) -> bool {
         #[cfg(windows)]
         {
             self.monitor
                 .as_ref()
-                .map(|m| m.is_ai_terminal(pid))
+                .map(|m| m.is_ai_terminal(_pid))
                 .unwrap_or(false)
         }
         #[cfg(not(windows))]
@@ -167,12 +167,12 @@ impl AiGuardian {
     }
 
     /// 手动添加 AI 进程
-    pub fn add_ai_process(&self, pid: u32) -> Result<(), GuardianError> {
+    pub fn add_ai_process(&self, _pid: u32) -> Result<(), GuardianError> {
         #[cfg(windows)]
         {
             if let Some(ref monitor) = self.monitor {
                 monitor
-                    .add_ai_process_to_driver(pid)
+                    .add_ai_process_to_driver(_pid)
                     .map_err(|e| GuardianError::DriverError(e.to_string()))?;
                 return Ok(());
             }
@@ -181,12 +181,12 @@ impl AiGuardian {
     }
 
     /// 手动移除 AI 进程
-    pub fn remove_ai_process(&self, pid: u32) -> Result<(), GuardianError> {
+    pub fn remove_ai_process(&self, _pid: u32) -> Result<(), GuardianError> {
         #[cfg(windows)]
         {
             if let Some(ref monitor) = self.monitor {
                 monitor
-                    .remove_ai_process_from_driver(pid)
+                    .remove_ai_process_from_driver(_pid)
                     .map_err(|e| GuardianError::DriverError(e.to_string()))?;
                 return Ok(());
             }

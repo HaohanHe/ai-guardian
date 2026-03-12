@@ -84,6 +84,12 @@ pub struct AuditLogger {
     last_hash: Arc<Mutex<String>>,
 }
 
+impl Default for AuditLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuditLogger {
     /// 创建新的审计日志管理器
     pub fn new() -> Self {
@@ -154,7 +160,7 @@ impl AuditLogger {
     /// 创建日志条目
     fn create_entry(&self, event: &OperationEvent) -> AuditLogEntry {
         let timestamp = Utc::now();
-        let id = format!("{}-{}", timestamp.timestamp_nanos(), event.process_id);
+        let id = format!("{}-{}", timestamp.timestamp_nanos_opt().unwrap_or(0), event.process_id);
 
         let operation = format!("{:?}", event.operation_type);
         let target = event
@@ -196,7 +202,7 @@ impl AuditLogger {
         let data = format!(
             "{}:{}:{}:{}:{}:{}:{}:{}",
             entry.id,
-            entry.timestamp.timestamp_nanos(),
+            entry.timestamp.timestamp_nanos_opt().unwrap_or(0),
             entry.process_id,
             entry.operation,
             entry.target,
@@ -451,7 +457,7 @@ impl RemoteBackupManager {
     }
 
     /// 上传日志到远程服务器
-    pub async fn upload_logs(&self, log_file: &Path) -> anyhow::Result<()> {
+    pub async fn upload_logs(&self, _log_file: &Path) -> anyhow::Result<()> {
         if !self.enabled {
             return Ok(());
         }

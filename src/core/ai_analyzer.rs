@@ -13,12 +13,18 @@ pub struct AiAnalyzer {
 
 /// 风险模式
 #[derive(Debug, Clone)]
-struct RiskPattern {
-    name: String,
-    description: String,
-    operation_types: Vec<OperationType>,
-    keywords: Vec<String>,
-    risk_score: u32,
+pub struct RiskPattern {
+    pub name: String,
+    pub description: String,
+    pub operation_types: Vec<OperationType>,
+    pub keywords: Vec<String>,
+    pub risk_score: u32,
+}
+
+impl Default for AiAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AiAnalyzer {
@@ -276,7 +282,7 @@ impl AiAnalyzer {
     }
 
     /// 添加自定义风险模式
-    pub fn add_pattern(&mut self, pattern: RiskPattern) {
+    pub fn add_pattern(&mut self, _pattern: RiskPattern) {
         // 这里简化处理，实际应该使用正确的 RiskPattern 结构
     }
 }
@@ -296,31 +302,30 @@ impl SemanticAnalysis {
         let cmd_lower = command.to_lowercase();
 
         // 简单的语义分析（实际应该使用 LLM）
-        if cmd_lower.contains("delete") || cmd_lower.contains("remove") || cmd_lower.contains("rm")
+        if (cmd_lower.contains("delete") || cmd_lower.contains("remove") || cmd_lower.contains("rm"))
+            && (cmd_lower.contains("-rf") || cmd_lower.contains("/f"))
         {
-            if cmd_lower.contains("-rf") || cmd_lower.contains("/f") {
-                return Self {
-                    intent: "Force deletion".to_string(),
-                    risk_level: "High".to_string(),
-                    confidence: 0.9,
-                    explanation: "Force deletion operations can be dangerous".to_string(),
-                };
-            }
+            return Self {
+                intent: "Force deletion".to_string(),
+                risk_level: "High".to_string(),
+                confidence: 0.9,
+                explanation: "Force deletion operations can be dangerous".to_string(),
+            };
         }
 
-        if cmd_lower.contains("download")
+        if (cmd_lower.contains("download")
             || cmd_lower.contains("curl")
-            || cmd_lower.contains("wget")
+            || cmd_lower.contains("wget"))
+            && (cmd_lower.contains("| bash") || cmd_lower.contains("| sh"))
         {
-            if cmd_lower.contains("| bash") || cmd_lower.contains("| sh") {
-                return Self {
-                    intent: "Download and execute".to_string(),
-                    risk_level: "Critical".to_string(),
-                    confidence: 0.95,
-                    explanation:
-                        "Downloading and immediately executing code is extremely dangerous"
-                            .to_string(),
-                };
+            return Self {
+                intent: "Download and execute".to_string(),
+                risk_level: "Critical".to_string(),
+                confidence: 0.95,
+                explanation:
+                    "Downloading and immediately executing code is extremely dangerous"
+                        .to_string(),
+            };
             }
         }
 

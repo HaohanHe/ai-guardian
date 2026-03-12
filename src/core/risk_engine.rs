@@ -84,6 +84,12 @@ pub struct RiskAssessment {
     pub recommendations: Vec<String>,
 }
 
+impl Default for RiskEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RiskEngine {
     /// 创建新的风险引擎
     pub fn new() -> Self {
@@ -256,7 +262,7 @@ impl RiskEngine {
                 .unwrap_or_default()
                 .as_secs(),
             process_id: event.process_id,
-            operation_type: event.operation_type.clone(),
+            operation_type: event.operation_type,
             target: event.target_path.clone().unwrap_or_default(),
             risk_score,
         };
@@ -289,7 +295,7 @@ impl RiskEngine {
         profile.last_seen = now;
         *profile
             .operation_count
-            .entry(event.operation_type.clone())
+            .entry(event.operation_type)
             .or_insert(0) += 1;
         profile.risk_score = (profile.risk_score + risk_score) / 2;
     }
@@ -311,8 +317,8 @@ impl RiskEngine {
     /// 生成解释
     fn generate_explanation(&self, event: &OperationEvent, score: u32, rules: &[String]) -> String {
         let mut explanation = format!(
-            "Operation '{}' by process '{}' (PID: {}) has risk score {}. ",
-            format!("{:?}", event.operation_type),
+            "Operation '{:?}' by process '{}' (PID: {}) has risk score {}. ",
+            event.operation_type,
             event.process_name,
             event.process_id,
             score
@@ -327,7 +333,7 @@ impl RiskEngine {
     }
 
     /// 生成建议
-    fn generate_recommendations(&self, score: u32, level: &RiskLevel) -> Vec<String> {
+    fn generate_recommendations(&self, _score: u32, level: &RiskLevel) -> Vec<String> {
         let mut recommendations = Vec::new();
 
         match level {
