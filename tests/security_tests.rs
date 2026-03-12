@@ -80,11 +80,18 @@ mod security_tests {
             );
             let assessment = engine.assess(&event);
 
+            // 打印调试信息
+            println!(
+                "i={}, score={}, triggered_rules={:?}",
+                i, assessment.total_score, assessment.triggered_rules
+            );
+
             if i > 10 {
                 // 高频操作应该触发频率规则
                 assert!(
                     assessment.total_score > 50,
-                    "Rapid file operations should increase risk"
+                    "Rapid file operations should increase risk, got score {} at i={}",
+                    assessment.total_score, i
                 );
             }
         }
