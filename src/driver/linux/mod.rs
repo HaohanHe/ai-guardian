@@ -91,8 +91,8 @@ impl LinuxGuardianEngine {
             command_line: String::new(),
             parent_pid: 0,
             is_tracked: true,
-            path: std::path::PathBuf::new(),
-            start_time: std::time::SystemTime::now(),
+            path: String::new(),
+            start_time: 0,
         };
         self.ai_processes.push(info);
         Ok(())

@@ -411,7 +411,8 @@ impl GuardianEngine for LinuxEngine {
         let ai_count = self.ai_processes.lock().unwrap().len();
 
         EngineStats {
-            total_events_processed: ebpf_stats.total_events_allowed + ebpf_stats.total_events_blocked,
+            total_events_processed: ebpf_stats.total_events_allowed
+                + ebpf_stats.total_events_blocked,
             total_events_blocked: ebpf_stats.total_events_blocked,
             total_events_allowed: ebpf_stats.total_events_allowed,
             ai_process_count: ai_count,
