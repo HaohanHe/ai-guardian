@@ -67,6 +67,12 @@ pub struct LinuxGuardianEngine {
     ai_processes: Vec<super::super::AiProcessInfo>,
 }
 
+impl Default for LinuxGuardianEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LinuxGuardianEngine {
     pub fn new() -> Self {
         Self {

@@ -30,8 +30,10 @@ use std::sync::{Arc, Mutex};
 /// AI Guardian 主控制器
 pub struct AiGuardian {
     #[cfg(windows)]
+    #[allow(dead_code)]
     monitor: Option<monitor::windows::WindowsMonitor>,
     #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
     monitor: Option<monitor::linux::LinuxMonitor>,
     config: GuardianConfig,
     running: Arc<Mutex<bool>>,
@@ -94,10 +96,11 @@ impl AiGuardian {
 
     /// 启动 AI Guardian
     pub fn start(&mut self) -> Result<(), GuardianError> {
-        let mut running = self.running.lock().unwrap();
+        let running = self.running.lock().unwrap();
         if *running {
             return Ok(());
         }
+        drop(running);
 
         #[cfg(windows)]
         {
@@ -116,8 +119,12 @@ impl AiGuardian {
             ));
         }
 
-        *running = true;
-        log::info!("AI Guardian started successfully");
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let mut running = self.running.lock().unwrap();
+            *running = true;
+            log::info!("AI Guardian started successfully");
+        }
         Ok(())
     }
 

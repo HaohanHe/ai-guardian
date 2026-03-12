@@ -326,6 +326,13 @@ pub struct LinuxEngine {
 }
 
 #[cfg(target_os = "linux")]
+impl Default for LinuxEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
 impl LinuxEngine {
     pub fn new() -> Self {
         Self {
