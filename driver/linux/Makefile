@@ -9,9 +9,35 @@ ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/')
 BPF_SRC := ai_guardian.bpf.c
 BPF_OBJ := ai_guardian.bpf.o
 
-# Kernel headers path
-KERNEL_HEADERS := /usr/include
-LINUX_HEADERS := /usr/src/linux-headers-$(shell uname -r)
+# Kernel release
+KERNEL_RELEASE := $(shell uname -r)
+
+# Function to find kernel headers path
+# Checks multiple common locations across different distributions
+find-kernel-headers = $(firstword $(wildcard \
+    /usr/src/linux-headers-$(KERNEL_RELEASE) \
+    /usr/src/kernels/$(KERNEL_RELEASE) \
+    /lib/modules/$(KERNEL_RELEASE)/build \
+    /usr/src/linux-$(KERNEL_RELEASE) \
+))
+
+# Kernel headers path with environment variable override
+# Users can set LINUX_HEADERS to override auto-detection
+LINUX_HEADERS ?= $(call find-kernel-headers)
+
+# Basic kernel headers (usually /usr/include on most systems)
+KERNEL_HEADERS ?= /usr/include
+
+# Validate kernel headers path
+ifeq ($(LINUX_HEADERS),)
+    $(error Unable to locate kernel headers. Please install kernel headers for your distribution, or set LINUX_HEADERS environment variable. Common locations: /usr/src/linux-headers-$(KERNEL_RELEASE), /usr/src/kernels/$(KERNEL_RELEASE), /lib/modules/$(KERNEL_RELEASE)/build)
+endif
+
+ifneq ($(wildcard $(LINUX_HEADERS)/include),)
+    # Kernel headers found
+else
+    $(error Kernel headers directory not found at $(LINUX_HEADERS). Please set LINUX_HEADERS to the correct path)
+endif
 
 # Compiler flags for eBPF
 BPF_CFLAGS := -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
@@ -22,13 +48,14 @@ BPF_CFLAGS := -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
     -I/usr/include/bpf \
     -Wall -g
 
-.PHONY: all clean vmlinux
+.PHONY: all clean vmlinux info
 
 all: $(BPF_OBJ)
 
 # Compile eBPF program
 $(BPF_OBJ): $(BPF_SRC)
 	@echo "Compiling eBPF program: $<"
+	@echo "Using kernel headers: $(LINUX_HEADERS)"
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 	@echo "eBPF program compiled: $@"
 
@@ -54,7 +81,9 @@ install: $(BPF_OBJ)
 # Debug target to show build info
 info:
 	@echo "Architecture: $(ARCH)"
+	@echo "Kernel release: $(KERNEL_RELEASE)"
 	@echo "Clang version: $(shell $(CLANG) --version | head -1)"
 	@echo "BPF source: $(BPF_SRC)"
 	@echo "BPF object: $(BPF_OBJ)"
 	@echo "Kernel headers: $(LINUX_HEADERS)"
+	@echo "Basic headers: $(KERNEL_HEADERS)"
