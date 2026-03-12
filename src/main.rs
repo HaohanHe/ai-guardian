@@ -1,8 +1,7 @@
 /**
  * AI Guardian - Main Entry Point
  */
-use ai_guardian::core::config::{ConfigManager, GuardianConfig};
-use ai_guardian::core::{initialize, shutdown, GuardianEngineFactory};
+use ai_guardian::core::config::ConfigManager;
 use std::path::PathBuf;
 
 #[tokio::main]
