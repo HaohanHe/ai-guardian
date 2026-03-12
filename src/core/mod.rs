@@ -10,8 +10,9 @@ pub mod risk_engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::OnceLock;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 /// 平台类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
