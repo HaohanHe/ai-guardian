@@ -157,7 +157,11 @@ jobs:
       if: steps.check-ui.outputs.exists == 'true'
       run: |
         cd ui
-        npm ci
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
 
     - name: Build Electron UI
       if: steps.check-ui.outputs.exists == 'true'
@@ -247,7 +251,11 @@ jobs:
       if: steps.check-ui.outputs.exists == 'true'
       run: |
         cd ui
-        npm ci
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
         npm run lint
       continue-on-error: true
 
