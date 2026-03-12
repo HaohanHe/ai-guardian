@@ -9,7 +9,7 @@
 mod linux_tests {
     use ai_guardian::core::*;
     use ai_guardian::linux::*;
-    use std::collections::HashMap;
+    use ai_guardian::monitor::ProcessMonitor;
 
     /// 测试 eBPF 监控器创建
     #[test]
