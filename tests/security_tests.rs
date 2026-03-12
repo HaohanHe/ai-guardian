@@ -91,7 +91,8 @@ mod security_tests {
                 assert!(
                     assessment.total_score > 50,
                     "Rapid file operations should increase risk, got score {} at i={}",
-                    assessment.total_score, i
+                    assessment.total_score,
+                    i
                 );
             }
         }
