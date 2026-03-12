@@ -327,11 +327,11 @@ impl RiskEngine {
 
         if let Some(profile) = profiles.get(&process_id) {
             let total_ops: u32 = profile.operation_count.values().sum();
-            // 第一次操作不应用衰减，后续操作随着次数增加风险分数衰减
-            if total_ops <= 1 {
+            // 前 10 次操作不应用衰减，后续操作随着次数增加风险分数衰减
+            if total_ops <= 10 {
                 return score;
             }
-            let decay_factor = (100.0 / (1.0 + (total_ops as f32 / 10.0))).min(100.0) / 100.0;
+            let decay_factor = (100.0 / (1.0 + ((total_ops - 10) as f32 / 10.0))).min(100.0) / 100.0;
             (score as f32 * decay_factor) as u32
         } else {
             score
