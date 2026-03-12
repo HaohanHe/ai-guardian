@@ -472,12 +472,12 @@ mod tests {
 
     #[test]
     fn test_platform_detection() {
-        let platform = Platform::current();
+        let _platform = Platform::current();
 
         #[cfg(target_os = "windows")]
-        assert_eq!(platform, Platform::Windows);
+        assert_eq!(_platform, Platform::Windows);
 
         #[cfg(target_os = "linux")]
-        assert_eq!(platform, Platform::Linux);
+        assert_eq!(_platform, Platform::Linux);
     }
 }

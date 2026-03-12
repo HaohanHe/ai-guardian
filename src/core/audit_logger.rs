@@ -483,6 +483,7 @@ impl RemoteBackupManager {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn create_test_event() -> OperationEvent {
         OperationEvent {

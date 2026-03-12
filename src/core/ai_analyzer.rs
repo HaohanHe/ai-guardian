@@ -341,6 +341,7 @@ impl SemanticAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     fn create_test_event(cmdline: &str, op_type: OperationType) -> OperationEvent {
         OperationEvent {
