@@ -411,18 +411,9 @@ impl GuardianEngine for LinuxEngine {
         let ai_count = self.ai_processes.lock().unwrap().len();
 
         EngineStats {
-            total_events_processed: ebpf_stats
-                .as_ref()
-                .map(|s| s.operations_allowed + s.operations_blocked)
-                .unwrap_or(0),
-            total_events_blocked: ebpf_stats
-                .as_ref()
-                .map(|s| s.operations_blocked)
-                .unwrap_or(0),
-            total_events_allowed: ebpf_stats
-                .as_ref()
-                .map(|s| s.operations_allowed)
-                .unwrap_or(0),
+            total_events_processed: ebpf_stats.total_events_allowed + ebpf_stats.total_events_blocked,
+            total_events_blocked: ebpf_stats.total_events_blocked,
+            total_events_allowed: ebpf_stats.total_events_allowed,
             ai_process_count: ai_count,
             average_risk_score: 0.0,
             uptime_seconds: std::time::SystemTime::now()

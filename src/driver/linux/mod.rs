@@ -90,6 +90,9 @@ impl LinuxGuardianEngine {
             name: name.to_string(),
             command_line: String::new(),
             parent_pid: 0,
+            is_tracked: true,
+            path: std::path::PathBuf::new(),
+            start_time: std::time::SystemTime::now(),
         };
         self.ai_processes.push(info);
         Ok(())
@@ -102,10 +105,12 @@ impl LinuxGuardianEngine {
 
     pub fn get_stats(&self) -> super::super::EngineStats {
         super::super::EngineStats {
-            total_operations_blocked: 0,
-            total_operations_allowed: 0,
-            ai_process_count: self.ai_processes.len() as i64,
-            driver_active: self.is_running,
+            total_events_processed: 0,
+            total_events_blocked: 0,
+            total_events_allowed: 0,
+            ai_process_count: self.ai_processes.len(),
+            average_risk_score: 0.0,
+            uptime_seconds: 0,
         }
     }
 
