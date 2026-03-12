@@ -293,18 +293,9 @@ impl GuardianEngine for WindowsEngine {
         let ai_count = self.ai_processes.lock().unwrap().len();
 
         EngineStats {
-            total_events_processed: driver_stats
-                .as_ref()
-                .map(|s| s.total_operations_allowed + s.total_operations_blocked)
-                .unwrap_or(0),
-            total_events_blocked: driver_stats
-                .as_ref()
-                .map(|s| s.total_operations_blocked)
-                .unwrap_or(0),
-            total_events_allowed: driver_stats
-                .as_ref()
-                .map(|s| s.total_operations_allowed)
-                .unwrap_or(0),
+            total_events_processed: driver_stats.total_events_allowed + driver_stats.total_events_blocked,
+            total_events_blocked: driver_stats.total_events_blocked,
+            total_events_allowed: driver_stats.total_events_allowed,
             ai_process_count: ai_count,
             average_risk_score: 0.0, // TODO: 计算平均风险分
             uptime_seconds: std::time::SystemTime::now()
@@ -316,7 +307,7 @@ impl GuardianEngine for WindowsEngine {
     }
 
     fn is_running(&self) -> bool {
-        self.inner.is_running
+        self.inner.is_running()
     }
 }
 
