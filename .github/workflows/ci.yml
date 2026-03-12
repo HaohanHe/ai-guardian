@@ -31,10 +31,11 @@ jobs:
         persist-credentials: true
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: actions-rs/toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
+        override: true
 
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
