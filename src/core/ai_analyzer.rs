@@ -326,7 +326,6 @@ impl SemanticAnalysis {
                     "Downloading and immediately executing code is extremely dangerous"
                         .to_string(),
             };
-            }
         }
 
         Self {
