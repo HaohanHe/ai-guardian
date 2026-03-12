@@ -169,37 +169,47 @@ fn cmd_list() {
     println!("📋 AI 终端进程列表");
     println!();
 
-    let mut guardian = AiGuardian::new();
+    #[cfg(not(windows))]
+    {
+        println!("⚠️  此功能仅在 Windows 平台可用");
+        println!("非 Windows 平台暂不支持进程列表功能");
+        return;
+    }
 
-    match guardian.start() {
-        Ok(()) => {
-            thread::sleep(Duration::from_millis(500));
+    #[cfg(windows)]
+    {
+        let mut guardian = AiGuardian::new();
 
-            let processes = guardian.get_ai_processes();
+        match guardian.start() {
+            Ok(()) => {
+                thread::sleep(Duration::from_millis(500));
 
-            if processes.is_empty() {
-                println!("未检测到 AI 终端进程");
-                println!();
-                println!("提示: 启动你的 AI Agent (OpenClaw, Cursor 等) 后重试");
-            } else {
-                println!("{:<10} {:<20} {:<30}", "PID", "进程名", "命令行");
-                println!("{}", "-".repeat(80));
+                let processes = guardian.get_ai_processes();
 
-                for proc in processes {
-                    let cmd_short = if proc.command_line.len() > 40 {
-                        format!("{}...", &proc.command_line[..37])
-                    } else {
-                        proc.command_line.clone()
-                    };
+                if processes.is_empty() {
+                    println!("未检测到 AI 终端进程");
+                    println!();
+                    println!("提示: 启动你的 AI Agent (OpenClaw, Cursor 等) 后重试");
+                } else {
+                    println!("{:<10} {:<20} {:<30}", "PID", "进程名", "命令行");
+                    println!("{}", "-".repeat(80));
 
-                    println!("{:<10} {:<20} {:<30}", proc.pid, proc.name, cmd_short);
+                    for proc in processes {
+                        let cmd_short = if proc.command_line.len() > 40 {
+                            format!("{}...", &proc.command_line[..37])
+                        } else {
+                            proc.command_line.clone()
+                        };
+
+                        println!("{:<10} {:<20} {:<30}", proc.pid, proc.name, cmd_short);
+                    }
                 }
-            }
 
-            guardian.stop();
-        }
-        Err(e) => {
-            eprintln!("启动失败: {}", e);
+                guardian.stop();
+            }
+            Err(e) => {
+                eprintln!("启动失败: {}", e);
+            }
         }
     }
 }
@@ -323,14 +333,20 @@ fn cmd_monitor() {
         Ok(()) => loop {
             let count = guardian.ai_process_count();
 
+            #[cfg(windows)]
+            let driver_status = if guardian.is_driver_connected() {
+                "✅"
+            } else {
+                "❌"
+            };
+
+            #[cfg(not(windows))]
+            let driver_status = "N/A";
+
             print!(
                 "\r监控中... AI 终端进程: {} | 驱动连接: {} | 时间: {}",
                 count,
-                if guardian.is_driver_connected() {
-                    "✅"
-                } else {
-                    "❌"
-                },
+                driver_status,
                 chrono::Local::now().format("%H:%M:%S")
             );
 
