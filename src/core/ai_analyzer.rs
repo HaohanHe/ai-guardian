@@ -53,7 +53,10 @@ impl AiAnalyzer {
         // 4. 检查进程名风险
         score += self.analyze_process_name(&event.process_name);
 
-        // 5. 匹配风险模式
+        // 5. 检查命令行中的可疑进程名（如 procdump.exe 在命令中但进程名是 test.exe）
+        score += self.analyze_process_name(&event.command_line);
+
+        // 6. 匹配风险模式
         for pattern in &self.risk_patterns {
             if self.matches_pattern(event, pattern) {
                 score += pattern.risk_score;
@@ -109,8 +112,13 @@ impl AiAnalyzer {
             score += 80; // 反向 shell
         }
 
-        if cmd_lower.contains("/dev/tcp/") && cmd_lower.contains("/bin/bash") {
+        if cmd_lower.contains("/dev/tcp/") {
             score += 90; // bash 反向 shell
+        }
+
+        // Python 反向 shell
+        if cmd_lower.contains("socket") && cmd_lower.contains("subprocess") && cmd_lower.contains("connect") {
+            score += 85;
         }
 
         // 权限提升
@@ -175,12 +183,12 @@ impl AiAnalyzer {
             ("cachedump", 90),
             ("lsadump", 90),
             ("procdump", 70),
-            ("psExec", 80),
+            ("psexec", 80),
             ("wce", 90), // Windows Credential Editor
             ("fgdump", 90),
             ("hashdump", 90),
             ("meterpreter", 100),
-            (" cobaltstrike", 100),
+            ("cobaltstrike", 100),
         ];
 
         for (suspicious, risk) in &suspicious_names {
@@ -223,6 +231,7 @@ impl AiAnalyzer {
                     "YOUR_FILES".to_string(),
                     "DECRYPT".to_string(),
                     "bitcoin".to_string(),
+                    "encrypt".to_string(),
                 ],
                 risk_score: 90,
             },
