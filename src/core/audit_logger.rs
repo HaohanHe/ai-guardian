@@ -160,7 +160,11 @@ impl AuditLogger {
     /// 创建日志条目
     fn create_entry(&self, event: &OperationEvent) -> AuditLogEntry {
         let timestamp = Utc::now();
-        let id = format!("{}-{}", timestamp.timestamp_nanos_opt().unwrap_or(0), event.process_id);
+        let id = format!(
+            "{}-{}",
+            timestamp.timestamp_nanos_opt().unwrap_or(0),
+            event.process_id
+        );
 
         let operation = format!("{:?}", event.operation_type);
         let target = event

@@ -318,10 +318,7 @@ impl RiskEngine {
     fn generate_explanation(&self, event: &OperationEvent, score: u32, rules: &[String]) -> String {
         let mut explanation = format!(
             "Operation '{:?}' by process '{}' (PID: {}) has risk score {}. ",
-            event.operation_type,
-            event.process_name,
-            event.process_id,
-            score
+            event.operation_type, event.process_name, event.process_id, score
         );
 
         if !rules.is_empty() {

@@ -302,7 +302,9 @@ impl SemanticAnalysis {
         let cmd_lower = command.to_lowercase();
 
         // 简单的语义分析（实际应该使用 LLM）
-        if (cmd_lower.contains("delete") || cmd_lower.contains("remove") || cmd_lower.contains("rm"))
+        if (cmd_lower.contains("delete")
+            || cmd_lower.contains("remove")
+            || cmd_lower.contains("rm"))
             && (cmd_lower.contains("-rf") || cmd_lower.contains("/f"))
         {
             return Self {
@@ -322,9 +324,8 @@ impl SemanticAnalysis {
                 intent: "Download and execute".to_string(),
                 risk_level: "Critical".to_string(),
                 confidence: 0.95,
-                explanation:
-                    "Downloading and immediately executing code is extremely dangerous"
-                        .to_string(),
+                explanation: "Downloading and immediately executing code is extremely dangerous"
+                    .to_string(),
             };
         }
 
