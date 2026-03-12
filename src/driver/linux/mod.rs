@@ -123,4 +123,15 @@ impl LinuxGuardianEngine {
     pub fn is_running(&self) -> bool {
         self.is_running
     }
+
+    /// 获取已注册的 AI 进程数量
+    pub fn get_ai_process_count(&self) -> usize {
+        self.ai_processes.len()
+    }
+
+    /// 设置配置
+    pub fn set_config(&mut self, _config: &DriverConfig) -> anyhow::Result<()> {
+        // 配置更新逻辑（当前为存根实现）
+        Ok(())
+    }
 }

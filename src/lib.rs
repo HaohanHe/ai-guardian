@@ -22,6 +22,12 @@ pub mod windows {
     pub use crate::monitor::windows::*;
 }
 
+#[cfg(target_os = "linux")]
+pub mod linux {
+    pub use crate::driver::linux::*;
+    pub use crate::monitor::linux::*;
+}
+
 // Re-export main types
 pub use core::*;
 
