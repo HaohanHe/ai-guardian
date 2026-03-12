@@ -192,11 +192,7 @@ fn cmd_list() {
                         proc.command_line.clone()
                     };
 
-                    println!("{:<10} {:<20} {:<30}",
-                        proc.pid,
-                        proc.name,
-                        cmd_short
-                    );
+                    println!("{:<10} {:<20} {:<30}", proc.pid, proc.name, cmd_short);
                 }
             }
 
@@ -282,14 +278,23 @@ fn cmd_stats() {
             {
                 match guardian.get_driver_stats() {
                     Ok(stats) => {
-                        println!("驱动状态: {}", if stats.driver_active { "✅ 活跃" } else { "❌ 未激活" });
+                        println!(
+                            "驱动状态: {}",
+                            if stats.driver_active {
+                                "✅ 活跃"
+                            } else {
+                                "❌ 未激活"
+                            }
+                        );
                         println!("AI 进程数: {}", stats.ai_process_count);
                         println!("已阻断操作: {}", stats.total_operations_blocked);
                         println!("已允许操作: {}", stats.total_operations_allowed);
 
                         if stats.total_operations_blocked + stats.total_operations_allowed > 0 {
-                            let block_rate = (stats.total_operations_blocked as f64 /
-                                (stats.total_operations_blocked + stats.total_operations_allowed) as f64) * 100.0;
+                            let block_rate = (stats.total_operations_blocked as f64
+                                / (stats.total_operations_blocked + stats.total_operations_allowed)
+                                    as f64)
+                                * 100.0;
                             println!("阻断率: {:.2}%", block_rate);
                         }
                     }
@@ -315,19 +320,22 @@ fn cmd_monitor() {
     let mut guardian = AiGuardian::new();
 
     match guardian.start() {
-        Ok(()) => {
-            loop {
-                let count = guardian.ai_process_count();
+        Ok(()) => loop {
+            let count = guardian.ai_process_count();
 
-                print!("\r监控中... AI 终端进程: {} | 驱动连接: {} | 时间: {}",
-                    count,
-                    if guardian.is_driver_connected() { "✅" } else { "❌" },
-                    chrono::Local::now().format("%H:%M:%S")
-                );
+            print!(
+                "\r监控中... AI 终端进程: {} | 驱动连接: {} | 时间: {}",
+                count,
+                if guardian.is_driver_connected() {
+                    "✅"
+                } else {
+                    "❌"
+                },
+                chrono::Local::now().format("%H:%M:%S")
+            );
 
-                thread::sleep(Duration::from_secs(1));
-            }
-        }
+            thread::sleep(Duration::from_secs(1));
+        },
         Err(e) => {
             eprintln!("启动失败: {}", e);
         }

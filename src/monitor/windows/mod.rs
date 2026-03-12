@@ -7,8 +7,8 @@
 
 pub mod etw;
 
+use crate::driver::windows::{DriverConfig, WindowsDriver};
 use etw::{EtwProcessMonitor, ProcessInfo};
-use crate::driver::windows::{WindowsDriver, DriverConfig};
 
 /// Windows 监控管理器
 pub struct WindowsMonitor {
@@ -30,7 +30,8 @@ impl WindowsMonitor {
     /// 启动监控（包含驱动连接）
     pub fn start(&mut self) -> Result<(), MonitorError> {
         // 启动进程监控
-        self.process_monitor.start()
+        self.process_monitor
+            .start()
             .map_err(|e| MonitorError::ProcessMonitorError(e.to_string()))?;
 
         // 尝试连接驱动
@@ -45,7 +46,10 @@ impl WindowsMonitor {
                 }
             }
             Err(e) => {
-                log::warn!("Failed to connect to driver: {}. Running in monitor-only mode.", e);
+                log::warn!(
+                    "Failed to connect to driver: {}. Running in monitor-only mode.",
+                    e
+                );
             }
         }
 
@@ -71,7 +75,8 @@ impl WindowsMonitor {
     /// 手动添加 AI 进程到驱动
     pub fn add_ai_process_to_driver(&self, pid: u32) -> Result<(), MonitorError> {
         if let Some(ref driver) = self.driver {
-            driver.add_ai_process(pid)
+            driver
+                .add_ai_process(pid)
                 .map_err(|e| MonitorError::DriverError(e.to_string()))?;
             Ok(())
         } else {
@@ -82,7 +87,8 @@ impl WindowsMonitor {
     /// 手动从驱动移除 AI 进程
     pub fn remove_ai_process_from_driver(&self, pid: u32) -> Result<(), MonitorError> {
         if let Some(ref driver) = self.driver {
-            driver.remove_ai_process(pid)
+            driver
+                .remove_ai_process(pid)
                 .map_err(|e| MonitorError::DriverError(e.to_string()))?;
             Ok(())
         } else {
@@ -93,7 +99,8 @@ impl WindowsMonitor {
     /// 获取驱动统计信息
     pub fn get_driver_stats(&self) -> Result<crate::driver::windows::DriverStats, MonitorError> {
         if let Some(ref driver) = self.driver {
-            driver.get_stats()
+            driver
+                .get_stats()
                 .map_err(|e| MonitorError::DriverError(e.to_string()))
         } else {
             Err(MonitorError::DriverNotConnected)
@@ -103,7 +110,8 @@ impl WindowsMonitor {
     /// 设置驱动配置
     pub fn set_driver_config(&self, config: &DriverConfig) -> Result<(), MonitorError> {
         if let Some(ref driver) = self.driver {
-            driver.set_config(config)
+            driver
+                .set_config(config)
                 .map_err(|e| MonitorError::DriverError(e.to_string()))?;
             Ok(())
         } else {

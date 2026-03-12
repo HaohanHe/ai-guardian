@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use windows::core::{GUID, PCWSTR};
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Diagnostics::Etw::*;
-use windows::core::{GUID, PCWSTR};
 
 /// AI 终端进程标记环境变量
 const AI_TERMINAL_MARKER: &str = "AI_GUARDIAN_TERMINAL=1";
@@ -137,7 +137,11 @@ fn monitor_loop(running: Arc<Mutex<bool>>, ai_processes: Arc<Mutex<HashMap<u32, 
                     if !last_processes.contains_key(pid) {
                         // 新进程
                         if is_ai_terminal_process(info) {
-                            log::info!("Detected AI terminal process: {} (PID: {})", info.name, pid);
+                            log::info!(
+                                "Detected AI terminal process: {} (PID: {})",
+                                info.name,
+                                pid
+                            );
                             let mut ai_procs = ai_processes.lock().unwrap();
                             ai_procs.insert(*pid, info.clone());
                         }
@@ -169,7 +173,9 @@ fn monitor_loop(running: Arc<Mutex<bool>>, ai_processes: Arc<Mutex<HashMap<u32, 
 fn scan_processes() -> Result<HashMap<u32, ProcessInfo>, EtwError> {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::System::Diagnostics::ToolHelp::*;
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    };
 
     let mut processes = HashMap::new();
 
@@ -195,8 +201,8 @@ fn scan_processes() -> Result<HashMap<u32, ProcessInfo>, EtwError> {
                 let command_line = get_process_command_line(pid).unwrap_or_default();
 
                 // 检查是否是 AI 终端
-                let is_ai_terminal = is_ai_terminal_by_name(&name)
-                    || is_ai_terminal_by_command_line(&command_line);
+                let is_ai_terminal =
+                    is_ai_terminal_by_name(&name) || is_ai_terminal_by_command_line(&command_line);
 
                 let ai_parent_pid = if is_ai_terminal {
                     None
@@ -230,16 +236,15 @@ fn scan_processes() -> Result<HashMap<u32, ProcessInfo>, EtwError> {
 /// 获取进程命令行
 #[cfg(windows)]
 fn get_process_command_line(pid: u32) -> Result<String, EtwError> {
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
     use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
     use windows::Win32::System::Memory::{VirtualQueryEx, MEMORY_BASIC_INFORMATION};
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    };
 
     unsafe {
-        let handle = OpenProcess(
-            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-            false,
-            pid,
-        ).map_err(|_| EtwError::ProcessAccessDenied)?;
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
+            .map_err(|_| EtwError::ProcessAccessDenied)?;
 
         // 获取 PEB 地址
         let mut pbi = std::mem::zeroed();
@@ -313,7 +318,9 @@ fn get_process_command_line(pid: u32) -> Result<String, EtwError> {
 /// 检查进程名是否是 AI Agent
 fn is_ai_terminal_by_name(name: &str) -> bool {
     let name_lower = name.to_lowercase();
-    AI_AGENT_PROCESSES.iter().any(|&proc| name_lower.contains(proc))
+    AI_AGENT_PROCESSES
+        .iter()
+        .any(|&proc| name_lower.contains(proc))
 }
 
 /// 检查命令行是否包含 AI 标记

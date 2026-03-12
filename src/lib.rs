@@ -1,17 +1,16 @@
 /**
  * AI Guardian V2 - System-Level EDR for AI Agents
- * 
+ *
  * AI Guardian 是一个系统级终端检测与响应 (EDR) 系统，
  * 专门用于保护 AI Agent（如 OpenClaw、Cursor、Windsurf 等）
  * 不被恶意命令攻击。
- * 
+ *
  * 核心特性：
  * - 内核级监控（Windows Minifilter / Linux eBPF）
  * - 自动识别 AI Agent 终端进程
  * - 拦截危险操作（文件删除、系统路径写入、网络连接）
  * - 进程树追踪（子进程继承 AI 标记）
  */
-
 pub mod core;
 pub mod driver;
 pub mod monitor;
@@ -103,7 +102,8 @@ impl AiGuardian {
         #[cfg(windows)]
         {
             let mut monitor = monitor::windows::WindowsMonitor::new();
-            monitor.start()
+            monitor
+                .start()
                 .map_err(|e| GuardianError::MonitorError(e.to_string()))?;
             self.monitor = Some(monitor);
         }
@@ -111,7 +111,9 @@ impl AiGuardian {
         #[cfg(target_os = "linux")]
         {
             // TODO: 实现 Linux 监控
-            return Err(GuardianError::NotImplemented("Linux support coming soon".to_string()));
+            return Err(GuardianError::NotImplemented(
+                "Linux support coming soon".to_string(),
+            ));
         }
 
         *running = true;
@@ -143,7 +145,8 @@ impl AiGuardian {
     /// 获取当前 AI 终端进程列表
     #[cfg(windows)]
     pub fn get_ai_processes(&self) -> Vec<monitor::windows::etw::ProcessInfo> {
-        self.monitor.as_ref()
+        self.monitor
+            .as_ref()
             .map(|m| m.get_ai_processes())
             .unwrap_or_default()
     }
@@ -152,7 +155,8 @@ impl AiGuardian {
     pub fn is_ai_terminal(&self, pid: u32) -> bool {
         #[cfg(windows)]
         {
-            self.monitor.as_ref()
+            self.monitor
+                .as_ref()
                 .map(|m| m.is_ai_terminal(pid))
                 .unwrap_or(false)
         }
@@ -167,7 +171,8 @@ impl AiGuardian {
         #[cfg(windows)]
         {
             if let Some(ref monitor) = self.monitor {
-                monitor.add_ai_process_to_driver(pid)
+                monitor
+                    .add_ai_process_to_driver(pid)
                     .map_err(|e| GuardianError::DriverError(e.to_string()))?;
                 return Ok(());
             }
@@ -180,7 +185,8 @@ impl AiGuardian {
         #[cfg(windows)]
         {
             if let Some(ref monitor) = self.monitor {
-                monitor.remove_ai_process_from_driver(pid)
+                monitor
+                    .remove_ai_process_from_driver(pid)
                     .map_err(|e| GuardianError::DriverError(e.to_string()))?;
                 return Ok(());
             }
@@ -192,7 +198,8 @@ impl AiGuardian {
     pub fn ai_process_count(&self) -> usize {
         #[cfg(windows)]
         {
-            self.monitor.as_ref()
+            self.monitor
+                .as_ref()
                 .map(|m| m.ai_process_count())
                 .unwrap_or(0)
         }
@@ -205,7 +212,8 @@ impl AiGuardian {
     /// 检查驱动是否已连接
     #[cfg(windows)]
     pub fn is_driver_connected(&self) -> bool {
-        self.monitor.as_ref()
+        self.monitor
+            .as_ref()
             .map(|m| m.is_driver_connected())
             .unwrap_or(false)
     }
@@ -214,7 +222,8 @@ impl AiGuardian {
     #[cfg(windows)]
     pub fn get_driver_stats(&self) -> Result<driver::windows::DriverStats, GuardianError> {
         if let Some(ref monitor) = self.monitor {
-            monitor.get_driver_stats()
+            monitor
+                .get_driver_stats()
                 .map_err(|e| GuardianError::DriverError(e.to_string()))
         } else {
             Err(GuardianError::NotRunning)
@@ -235,7 +244,8 @@ impl AiGuardian {
                     log_all_operations: config.log_all_operations,
                     risk_threshold: config.risk_threshold,
                 };
-                monitor.set_driver_config(&driver_config)
+                monitor
+                    .set_driver_config(&driver_config)
                     .map_err(|e| GuardianError::DriverError(e.to_string()))?;
             }
         }

@@ -2,7 +2,7 @@
 //!
 //! 系统配置管理
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -430,16 +430,12 @@ pub fn init(config_path: PathBuf) {
 
 /// 获取全局配置
 pub fn global() -> &'static ConfigManager {
-    unsafe {
-        GLOBAL_CONFIG.as_ref().expect("Config not initialized")
-    }
+    unsafe { GLOBAL_CONFIG.as_ref().expect("Config not initialized") }
 }
 
 /// 获取可变全局配置
 pub fn global_mut() -> &'static mut ConfigManager {
-    unsafe {
-        GLOBAL_CONFIG.as_mut().expect("Config not initialized")
-    }
+    unsafe { GLOBAL_CONFIG.as_mut().expect("Config not initialized") }
 }
 
 #[cfg(test)]

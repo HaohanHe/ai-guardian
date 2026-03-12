@@ -45,7 +45,11 @@ pub enum RuleCondition {
     /// 组合条件（OR）
     Or(Vec<RuleCondition>),
     /// 频率条件（单位时间内发生次数）
-    Frequency { op_type: OperationType, count: u32, window_secs: u64 },
+    Frequency {
+        op_type: OperationType,
+        count: u32,
+        window_secs: u64,
+    },
 }
 
 /// 行为记录
@@ -155,18 +159,16 @@ impl RiskEngine {
     /// 评估条件
     fn evaluate_condition(&self, condition: &RuleCondition, event: &OperationEvent) -> bool {
         match condition {
-            RuleCondition::OperationType(op_type) => {
-                &event.operation_type == op_type
-            }
-            RuleCondition::PathContains(path) => {
-                event.target_path
-                    .as_ref()
-                    .map(|p| p.to_lowercase().contains(&path.to_lowercase()))
-                    .unwrap_or(false)
-            }
-            RuleCondition::CommandContains(cmd) => {
-                event.command_line.to_lowercase().contains(&cmd.to_lowercase())
-            }
+            RuleCondition::OperationType(op_type) => &event.operation_type == op_type,
+            RuleCondition::PathContains(path) => event
+                .target_path
+                .as_ref()
+                .map(|p| p.to_lowercase().contains(&path.to_lowercase()))
+                .unwrap_or(false),
+            RuleCondition::CommandContains(cmd) => event
+                .command_line
+                .to_lowercase()
+                .contains(&cmd.to_lowercase()),
             RuleCondition::ProcessName(name) => {
                 event.process_name.to_lowercase() == name.to_lowercase()
             }
@@ -176,14 +178,22 @@ impl RiskEngine {
             RuleCondition::Or(conditions) => {
                 conditions.iter().any(|c| self.evaluate_condition(c, event))
             }
-            RuleCondition::Frequency { op_type, count, window_secs } => {
-                self.check_frequency(event.process_id, *op_type, *count, *window_secs)
-            }
+            RuleCondition::Frequency {
+                op_type,
+                count,
+                window_secs,
+            } => self.check_frequency(event.process_id, *op_type, *count, *window_secs),
         }
     }
 
     /// 检查操作频率
-    fn check_frequency(&self, process_id: u32, op_type: OperationType, count: u32, window_secs: u64) -> bool {
+    fn check_frequency(
+        &self,
+        process_id: u32,
+        op_type: OperationType,
+        count: u32,
+        window_secs: u64,
+    ) -> bool {
         let history = self.behavior_history.lock().unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -223,7 +233,12 @@ impl RiskEngine {
         let profiles = self.process_profiles.lock().unwrap();
         if let Some(profile) = profiles.get(&event.process_id) {
             // 如果进程之前没有这类操作，增加风险
-            if profile.operation_count.get(&event.operation_type).unwrap_or(&0) == &0 {
+            if profile
+                .operation_count
+                .get(&event.operation_type)
+                .unwrap_or(&0)
+                == &0
+            {
                 score += 15;
             }
         }
@@ -262,15 +277,20 @@ impl RiskEngine {
             .unwrap_or_default()
             .as_secs();
 
-        let profile = profiles.entry(event.process_id).or_insert_with(|| ProcessProfile {
-            process_id: event.process_id,
-            process_name: event.process_name.clone(),
-            first_seen: now,
-            ..Default::default()
-        });
+        let profile = profiles
+            .entry(event.process_id)
+            .or_insert_with(|| ProcessProfile {
+                process_id: event.process_id,
+                process_name: event.process_name.clone(),
+                first_seen: now,
+                ..Default::default()
+            });
 
         profile.last_seen = now;
-        *profile.operation_count.entry(event.operation_type.clone()).or_insert(0) += 1;
+        *profile
+            .operation_count
+            .entry(event.operation_type.clone())
+            .or_insert(0) += 1;
         profile.risk_score = (profile.risk_score + risk_score) / 2;
     }
 
@@ -474,10 +494,7 @@ mod tests {
     #[test]
     fn test_system_file_deletion() {
         let mut engine = RiskEngine::new();
-        let event = create_test_event(
-            OperationType::FileDelete,
-            Some("/etc/passwd")
-        );
+        let event = create_test_event(OperationType::FileDelete, Some("/etc/passwd"));
         let assessment = engine.assess(&event);
         assert!(assessment.total_score >= 95);
         assert_eq!(assessment.risk_level, RiskLevel::Critical);
@@ -486,10 +503,7 @@ mod tests {
     #[test]
     fn test_normal_operation() {
         let mut engine = RiskEngine::new();
-        let event = create_test_event(
-            OperationType::FileRead,
-            Some("/home/user/document.txt")
-        );
+        let event = create_test_event(OperationType::FileRead, Some("/home/user/document.txt"));
         let assessment = engine.assess(&event);
         assert!(assessment.total_score < 30);
     }
@@ -499,10 +513,7 @@ mod tests {
         let mut engine = RiskEngine::new();
         assert!(engine.toggle_rule("R001", false));
 
-        let event = create_test_event(
-            OperationType::FileDelete,
-            Some("/etc/passwd")
-        );
+        let event = create_test_event(OperationType::FileDelete, Some("/etc/passwd"));
         let assessment = engine.assess(&event);
         // 规则被禁用，分数应该降低
         assert!(assessment.total_score < 95);

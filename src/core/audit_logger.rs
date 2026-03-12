@@ -2,16 +2,16 @@
 //!
 //! 执法记录仪 - 系统级审计日志，支持数字签名和防篡改
 
-use super::{OperationEvent, SecurityDecision, RiskLevel};
+use super::{OperationEvent, RiskLevel, SecurityDecision};
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
-use std::fs::{OpenOptions, File};
-use std::io::{Write, BufWriter};
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use sha2::{Sha256, Digest};
 
 /// 审计日志条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,7 +116,7 @@ impl AuditLogger {
     /// 记录事件
     pub fn log(&self, event: &OperationEvent) {
         let entry = self.create_entry(event);
-        
+
         // 写入文件
         if let Err(e) = self.write_to_file(&entry) {
             log::error!("Failed to write audit log: {}", e);
@@ -139,7 +139,7 @@ impl AuditLogger {
         let mut entry = self.create_entry(event);
         entry.decision = decision;
         entry.reason = reason.to_string();
-        
+
         // 重新计算签名
         if self.config.enable_signature {
             entry.signature = self.calculate_signature(&entry);
@@ -156,9 +156,11 @@ impl AuditLogger {
     fn create_entry(&self, event: &OperationEvent) -> AuditLogEntry {
         let timestamp = Utc::now();
         let id = format!("{}-{}", timestamp.timestamp_nanos(), event.process_id);
-        
+
         let operation = format!("{:?}", event.operation_type);
-        let target = event.target_path.clone()
+        let target = event
+            .target_path
+            .clone()
             .or_else(|| event.target_ip.map(|ip| ip.to_string()))
             .unwrap_or_default();
 
@@ -219,12 +221,12 @@ impl AuditLogger {
     /// 写入文件
     fn write_to_file(&self, entry: &AuditLogEntry) -> anyhow::Result<()> {
         let mut file_guard = self.current_file.lock().unwrap();
-        
+
         if let Some(ref mut writer) = *file_guard {
             let line = serde_json::to_string(entry)?;
             writeln!(writer, "{}", line)?;
             writer.flush()?;
-            
+
             // 更新文件大小
             *self.current_file_size.lock().unwrap() += line.len() as u64 + 1;
         }
@@ -236,7 +238,7 @@ impl AuditLogger {
     fn add_to_buffer(&self, entry: AuditLogEntry) {
         let mut buffer = self.memory_buffer.lock().unwrap();
         buffer.push_back(entry);
-        
+
         // 保持缓冲区大小限制
         while buffer.len() > self.buffer_size {
             buffer.pop_front();
@@ -297,7 +299,7 @@ impl AuditLogger {
         for entry in std::fs::read_dir(&self.config.log_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if let Ok(metadata) = entry.metadata() {
                 if let Ok(modified) = metadata.modified() {
                     let modified: DateTime<Utc> = modified.into();
@@ -368,7 +370,10 @@ impl AuditLogger {
             if self.config.enable_signature {
                 let expected_sig = self.calculate_signature(entry);
                 if entry.signature != expected_sig {
-                    log::error!("Audit log signature verification failed at entry {}", entry.id);
+                    log::error!(
+                        "Audit log signature verification failed at entry {}",
+                        entry.id
+                    );
                     return false;
                 }
             }
@@ -391,7 +396,11 @@ impl AuditLogger {
         }
 
         writer.flush()?;
-        log::info!("Exported {} audit log entries to {:?}", buffer.len(), filepath);
+        log::info!(
+            "Exported {} audit log entries to {:?}",
+            buffer.len(),
+            filepath
+        );
 
         Ok(())
     }
@@ -399,10 +408,16 @@ impl AuditLogger {
     /// 获取统计信息
     pub fn get_stats(&self) -> AuditStats {
         let buffer = self.memory_buffer.lock().unwrap();
-        
+
         let total_events = buffer.len();
-        let blocked_events = buffer.iter().filter(|e| e.decision == SecurityDecision::Block).count();
-        let high_risk_events = buffer.iter().filter(|e| e.risk_level == RiskLevel::High || e.risk_level == RiskLevel::Critical).count();
+        let blocked_events = buffer
+            .iter()
+            .filter(|e| e.decision == SecurityDecision::Block)
+            .count();
+        let high_risk_events = buffer
+            .iter()
+            .filter(|e| e.risk_level == RiskLevel::High || e.risk_level == RiskLevel::Critical)
+            .count();
 
         AuditStats {
             total_events,
@@ -442,7 +457,9 @@ impl RemoteBackupManager {
             return Ok(());
         }
 
-        let url = self.backup_url.as_ref()
+        let url = self
+            .backup_url
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Backup URL not configured"))?;
 
         // 这里实现实际上传逻辑
@@ -485,9 +502,9 @@ mod tests {
     fn test_audit_log_creation() {
         let logger = AuditLogger::new();
         let event = create_test_event();
-        
+
         logger.log(&event);
-        
+
         let recent = logger.query_recent(1);
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].process_id, 1234);
@@ -498,9 +515,9 @@ mod tests {
     fn test_query_by_risk_level() {
         let logger = AuditLogger::new();
         let event = create_test_event();
-        
+
         logger.log(&event);
-        
+
         let critical = logger.query_by_risk_level(RiskLevel::Critical);
         assert!(!critical.is_empty());
     }
@@ -509,10 +526,10 @@ mod tests {
     fn test_integrity_verification() {
         let logger = AuditLogger::new();
         let event = create_test_event();
-        
+
         logger.log(&event);
         logger.log(&event);
-        
+
         assert!(logger.verify_integrity());
     }
 }

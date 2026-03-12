@@ -20,7 +20,7 @@ mod linux_tests {
     #[test]
     fn test_ai_process_registration() {
         let mut engine = LinuxGuardianEngine::new();
-        
+
         // 尝试初始化
         let result = engine.initialize();
         if result.is_err() {
@@ -52,12 +52,13 @@ mod linux_tests {
         if version_parts.len() >= 2 {
             let major: u32 = version_parts[0].parse().unwrap_or(0);
             let minor: u32 = version_parts[1].parse().unwrap_or(0);
-            
+
             // 需要 4.18+ 以获得 BPF ring buffer 支持
             assert!(
                 major > 4 || (major == 4 && minor >= 18),
                 "Kernel {}.{} is too old. Need 4.18+",
-                major, minor
+                major,
+                minor
             );
         }
     }
@@ -66,7 +67,7 @@ mod linux_tests {
     #[test]
     fn test_ebpf_program_loading() {
         let mut monitor = LinuxEbpfMonitor::new().unwrap();
-        
+
         // 设置回调
         monitor.set_event_callback(|event| {
             println!("eBPF event: {:?}", event);
@@ -83,7 +84,7 @@ mod linux_tests {
     #[test]
     fn test_config_update() {
         let mut engine = LinuxGuardianEngine::new();
-        
+
         let config = GuardianConfig {
             block_file_delete: 1,
             block_system_path_write: 1,

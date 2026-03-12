@@ -1,14 +1,17 @@
 //! AI Guardian Windows Driver Interface
-//! 
+//!
 //! 与内核驱动通信，管理 AI 终端进程列表
 
 use std::ffi::c_void;
 use std::os::raw::c_ulong;
 use std::ptr::null_mut;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, STATUS_SUCCESS};
-use windows::Win32::Storage::FileSystem::{CreateFileW, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
-use windows::Win32::System::Ioctl::DeviceIoControl;
 use windows::core::PCWSTR;
+use windows::Win32::Foundation::{CloseHandle, HANDLE, STATUS_SUCCESS};
+use windows::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    OPEN_EXISTING,
+};
+use windows::Win32::System::Ioctl::DeviceIoControl;
 
 /// 驱动设备路径
 const AI_GUARDIAN_DEVICE_PATH: &str = r"\\.\AiGuardianDevice";
@@ -22,10 +25,14 @@ fn ctl_code(device_type: u32, function: u32, method: u32, access: u32) -> u32 {
     (device_type << 16) | (access << 14) | (function << 2) | method
 }
 
-const IOCTL_AI_GUARDIAN_ADD_PROCESS: u32 = ctl_code(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS);
-const IOCTL_AI_GUARDIAN_REMOVE_PROCESS: u32 = ctl_code(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS);
-const IOCTL_AI_GUARDIAN_GET_STATS: u32 = ctl_code(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS);
-const IOCTL_AI_GUARDIAN_SET_CONFIG: u32 = ctl_code(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const IOCTL_AI_GUARDIAN_ADD_PROCESS: u32 =
+    ctl_code(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const IOCTL_AI_GUARDIAN_REMOVE_PROCESS: u32 =
+    ctl_code(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const IOCTL_AI_GUARDIAN_GET_STATS: u32 =
+    ctl_code(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS);
+const IOCTL_AI_GUARDIAN_SET_CONFIG: u32 =
+    ctl_code(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS);
 
 /// 驱动统计信息
 #[repr(C)]
@@ -73,7 +80,7 @@ impl WindowsDriver {
                 .encode_utf16()
                 .chain(std::iter::once(0))
                 .collect();
-            
+
             let handle = CreateFileW(
                 PCWSTR(device_path.as_ptr()),
                 FILE_GENERIC_READ.0 | FILE_GENERIC_WRITE.0,
@@ -83,22 +90,22 @@ impl WindowsDriver {
                 windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
                 HANDLE(null_mut()),
             );
-            
+
             if handle.is_invalid() {
                 return Err(DriverError::DeviceOpenFailed);
             }
-            
+
             Ok(Self {
                 device_handle: handle,
             })
         }
     }
-    
+
     /// 添加 AI 终端进程
     pub fn add_ai_process(&self, pid: u32) -> Result<(), DriverError> {
         unsafe {
             let mut bytes_returned: u32 = 0;
-            
+
             let result = DeviceIoControl(
                 self.device_handle,
                 IOCTL_AI_GUARDIAN_ADD_PROCESS,
@@ -109,21 +116,21 @@ impl WindowsDriver {
                 Some(&mut bytes_returned),
                 None,
             );
-            
+
             if !result.as_bool() {
                 return Err(DriverError::IoctlFailed);
             }
-            
+
             log::info!("Added AI process {} to driver", pid);
             Ok(())
         }
     }
-    
+
     /// 移除 AI 终端进程
     pub fn remove_ai_process(&self, pid: u32) -> Result<(), DriverError> {
         unsafe {
             let mut bytes_returned: u32 = 0;
-            
+
             let result = DeviceIoControl(
                 self.device_handle,
                 IOCTL_AI_GUARDIAN_REMOVE_PROCESS,
@@ -134,22 +141,22 @@ impl WindowsDriver {
                 Some(&mut bytes_returned),
                 None,
             );
-            
+
             if !result.as_bool() {
                 return Err(DriverError::IoctlFailed);
             }
-            
+
             log::info!("Removed AI process {} from driver", pid);
             Ok(())
         }
     }
-    
+
     /// 获取驱动统计信息
     pub fn get_stats(&self) -> Result<DriverStats, DriverError> {
         unsafe {
             let mut stats: DriverStats = std::mem::zeroed();
             let mut bytes_returned: u32 = 0;
-            
+
             let result = DeviceIoControl(
                 self.device_handle,
                 IOCTL_AI_GUARDIAN_GET_STATS,
@@ -160,20 +167,20 @@ impl WindowsDriver {
                 Some(&mut bytes_returned),
                 None,
             );
-            
+
             if !result.as_bool() {
                 return Err(DriverError::IoctlFailed);
             }
-            
+
             Ok(stats)
         }
     }
-    
+
     /// 设置驱动配置
     pub fn set_config(&self, config: &DriverConfig) -> Result<(), DriverError> {
         unsafe {
             let mut bytes_returned: u32 = 0;
-            
+
             let result = DeviceIoControl(
                 self.device_handle,
                 IOCTL_AI_GUARDIAN_SET_CONFIG,
@@ -184,16 +191,16 @@ impl WindowsDriver {
                 Some(&mut bytes_returned),
                 None,
             );
-            
+
             if !result.as_bool() {
                 return Err(DriverError::IoctlFailed);
             }
-            
+
             log::info!("Updated driver config");
             Ok(())
         }
     }
-    
+
     /// 检查驱动是否运行
     pub fn is_driver_active(&self) -> Result<bool, DriverError> {
         let stats = self.get_stats()?;
@@ -214,10 +221,10 @@ impl Drop for WindowsDriver {
 pub enum DriverError {
     #[error("Failed to open driver device")]
     DeviceOpenFailed,
-    
+
     #[error("IOCTL call failed")]
     IoctlFailed,
-    
+
     #[error("Driver not loaded")]
     DriverNotLoaded,
 }
@@ -225,7 +232,7 @@ pub enum DriverError {
 /// 安装驱动（需要管理员权限）
 pub fn install_driver(driver_path: &str) -> Result<(), DriverError> {
     use std::process::Command;
-    
+
     // 使用 sc.exe 创建服务
     let output = Command::new("sc.exe")
         .args(&[
@@ -244,25 +251,29 @@ pub fn install_driver(driver_path: &str) -> Result<(), DriverError> {
         ])
         .output()
         .map_err(|_| DriverError::IoctlFailed)?;
-    
+
     if !output.status.success() {
-        log::error!("Failed to create driver service: {}", 
-                   String::from_utf8_lossy(&output.stderr));
+        log::error!(
+            "Failed to create driver service: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return Err(DriverError::IoctlFailed);
     }
-    
+
     // 启动服务
     let output = Command::new("sc.exe")
         .args(&["start", "AiGuardianDriver"])
         .output()
         .map_err(|_| DriverError::IoctlFailed)?;
-    
+
     if !output.status.success() {
-        log::error!("Failed to start driver service: {}",
-                   String::from_utf8_lossy(&output.stderr));
+        log::error!(
+            "Failed to start driver service: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return Err(DriverError::IoctlFailed);
     }
-    
+
     log::info!("Driver installed and started successfully");
     Ok(())
 }
@@ -270,24 +281,26 @@ pub fn install_driver(driver_path: &str) -> Result<(), DriverError> {
 /// 卸载驱动
 pub fn uninstall_driver() -> Result<(), DriverError> {
     use std::process::Command;
-    
+
     // 停止服务
     let _ = Command::new("sc.exe")
         .args(&["stop", "AiGuardianDriver"])
         .output();
-    
+
     // 删除服务
     let output = Command::new("sc.exe")
         .args(&["delete", "AiGuardianDriver"])
         .output()
         .map_err(|_| DriverError::IoctlFailed)?;
-    
+
     if !output.status.success() {
-        log::error!("Failed to delete driver service: {}",
-                   String::from_utf8_lossy(&output.stderr));
+        log::error!(
+            "Failed to delete driver service: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return Err(DriverError::IoctlFailed);
     }
-    
+
     log::info!("Driver uninstalled successfully");
     Ok(())
 }
@@ -295,11 +308,11 @@ pub fn uninstall_driver() -> Result<(), DriverError> {
 /// 检查驱动是否已安装
 pub fn is_driver_installed() -> bool {
     use std::process::Command;
-    
+
     let output = Command::new("sc.exe")
         .args(&["query", "AiGuardianDriver"])
         .output();
-    
+
     match output {
         Ok(output) => output.status.success(),
         Err(_) => false,
@@ -309,11 +322,11 @@ pub fn is_driver_installed() -> bool {
 /// 检查驱动是否正在运行
 pub fn is_driver_running() -> bool {
     use std::process::Command;
-    
+
     let output = Command::new("sc.exe")
         .args(&["query", "AiGuardianDriver"])
         .output();
-    
+
     match output {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -326,7 +339,7 @@ pub fn is_driver_running() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_driver_config_default() {
         let config = DriverConfig::default();
@@ -336,7 +349,7 @@ mod tests {
         assert!(!config.log_all_operations);
         assert_eq!(config.risk_threshold, 70);
     }
-    
+
     #[test]
     fn test_ioctl_codes() {
         // 验证 IOCTL 码与驱动中定义的一致

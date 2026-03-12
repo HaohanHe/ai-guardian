@@ -7,8 +7,8 @@
 #[cfg(test)]
 #[cfg(target_os = "windows")]
 mod windows_tests {
-    use ai_guardian::driver::windows::*;
     use ai_guardian::core::*;
+    use ai_guardian::driver::windows::*;
 
     /// 测试 Windows 驱动连接
     #[test]
@@ -25,7 +25,7 @@ mod windows_tests {
     #[test]
     fn test_ai_process_registration() {
         let mut engine = WindowsGuardianEngine::new();
-        
+
         // 初始化引擎
         let result = engine.initialize();
         // 允许失败（如果驱动未安装）
@@ -62,7 +62,7 @@ mod windows_tests {
         assert!(monitor.is_ok());
 
         let mut monitor = monitor.unwrap();
-        
+
         // 注册回调
         monitor.set_event_callback(|event| {
             println!("Process event: {:?}", event);
@@ -80,7 +80,7 @@ mod windows_tests {
     #[test]
     fn test_wfp_monitor() {
         let mut monitor = WfpNetworkMonitor::new();
-        
+
         // 注册回调
         monitor.set_event_callback(|event| {
             println!("Network event: {:?}", event);
