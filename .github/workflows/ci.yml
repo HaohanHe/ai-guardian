@@ -372,41 +372,27 @@ jobs:
         chmod +x debian/ai-guardian/usr/bin/ai-guardian || true
         
         # 创建控制文件
-        cat > debian/ai-guardian/DEBIAN/control << 'EOF'
-Package: ai-guardian
-Version: ${{ steps.version.outputs.version }}
-Section: utils
-Priority: optional
-Architecture: amd64
-Depends: libelf1, libbpf0
-Maintainer: AI Guardian Team <team@ai-guardian.dev>
-Description: AI Guardian - System-Level EDR for AI Agents
- AI Guardian is a system-level Endpoint Detection and Response (EDR)
- system designed to protect AI Agents from malicious command attacks.
- It provides kernel-level monitoring and automatic AI process detection.
-EOF
+        echo "Package: ai-guardian" > debian/ai-guardian/DEBIAN/control
+        echo "Version: ${{ steps.version.outputs.version }}" >> debian/ai-guardian/DEBIAN/control
+        echo "Section: utils" >> debian/ai-guardian/DEBIAN/control
+        echo "Priority: optional" >> debian/ai-guardian/DEBIAN/control
+        echo "Architecture: amd64" >> debian/ai-guardian/DEBIAN/control
+        echo "Depends: libelf1, libbpf0" >> debian/ai-guardian/DEBIAN/control
+        echo "Maintainer: AI Guardian Team <team@ai-guardian.dev>" >> debian/ai-guardian/DEBIAN/control
+        echo "Description: AI Guardian - System-Level EDR for AI Agents" >> debian/ai-guardian/DEBIAN/control
+        echo " AI Guardian is a system-level EDR for protecting AI Agents." >> debian/ai-guardian/DEBIAN/control
         
         # 创建 postinst 脚本
-        cat > debian/ai-guardian/DEBIAN/postinst << 'EOF'
-#!/bin/bash
-set -e
-
-# 创建 ai-guardian 用户（如果不存在）
-if ! id -u ai-guardian > /dev/null 2>&1; then
-    useradd -r -s /bin/false ai-guardian
-fi
-
-# 设置权限
-chown -R ai-guardian:ai-guardian /etc/ai-guardian
-
-# 重新加载 systemd
-if command -v systemctl >/dev/null 2>&1; then
-    systemctl daemon-reload
-fi
-
-echo "AI Guardian installed successfully!"
-echo "Run 'sudo ai-guardian' to start the service."
-EOF
+        echo '#!/bin/bash' > debian/ai-guardian/DEBIAN/postinst
+        echo 'set -e' >> debian/ai-guardian/DEBIAN/postinst
+        echo '' >> debian/ai-guardian/DEBIAN/postinst
+        echo 'if ! id -u ai-guardian > /dev/null 2>&1; then' >> debian/ai-guardian/DEBIAN/postinst
+        echo '    useradd -r -s /bin/false ai-guardian' >> debian/ai-guardian/DEBIAN/postinst
+        echo 'fi' >> debian/ai-guardian/DEBIAN/postinst
+        echo '' >> debian/ai-guardian/DEBIAN/postinst
+        echo 'chown -R ai-guardian:ai-guardian /etc/ai-guardian' >> debian/ai-guardian/DEBIAN/postinst
+        echo '' >> debian/ai-guardian/DEBIAN/postinst
+        echo 'echo "AI Guardian installed successfully!"' >> debian/ai-guardian/DEBIAN/postinst
         chmod 755 debian/ai-guardian/DEBIAN/postinst
         
         # 构建 deb 包
