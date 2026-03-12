@@ -50,10 +50,30 @@ BPF_CFLAGS := -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
 
 .PHONY: all clean vmlinux info
 
-all: $(BPF_OBJ)
+all: vmlinux $(BPF_OBJ)
+
+# Generate vmlinux.h from kernel BTF
+vmlinux.h:
+	@if [ -f /sys/kernel/btf/vmlinux ]; then \
+		if command -v $(BPFTOOL) >/dev/null 2>&1; then \
+			echo "Generating vmlinux.h from kernel BTF..."; \
+			$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h; \
+		else \
+			echo "Warning: bpftool not found, trying to use system vmlinux.h"; \
+			if [ -f $(LINUX_HEADERS)/include/vmlinux.h ]; then \
+				cp $(LINUX_HEADERS)/include/vmlinux.h .; \
+			else \
+				echo "Error: vmlinux.h not found. Please install bpftool or kernel headers."; \
+				exit 1; \
+			fi \
+		fi \
+	else \
+		echo "Error: /sys/kernel/btf/vmlinux not found. Kernel BTF support required."; \
+		exit 1; \
+	fi
 
 # Compile eBPF program
-$(BPF_OBJ): $(BPF_SRC)
+$(BPF_OBJ): $(BPF_SRC) vmlinux.h
 	@echo "Compiling eBPF program: $<"
 	@echo "Using kernel headers: $(LINUX_HEADERS)"
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
