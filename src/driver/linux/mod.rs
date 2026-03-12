@@ -60,3 +60,14 @@ pub struct DriverStats {
     pub ai_process_count: i64,
     pub driver_active: bool,
 }
+
+/// Linux Guardian 引擎
+pub struct LinuxGuardianEngine {
+    pub is_running: bool,
+}
+
+impl LinuxGuardianEngine {
+    pub fn new() -> Self {
+        Self { is_running: false }
+    }
+}
