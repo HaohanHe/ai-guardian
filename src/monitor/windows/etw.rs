@@ -136,7 +136,7 @@ fn monitor_loop(running: Arc<Mutex<bool>>, ai_processes: Arc<Mutex<HashMap<u32, 
                                 pid
                             );
                             let mut ai_procs = ai_processes.lock().unwrap();
-                            ai_processes.insert(*pid, info.clone());
+                            ai_procs.insert(*pid, info.clone());
                         }
                     }
                 }
