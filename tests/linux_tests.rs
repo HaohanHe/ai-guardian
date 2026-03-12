@@ -7,8 +7,8 @@
 #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod linux_tests {
-    use ai_guardian::linux::*;
     use ai_guardian::core::*;
+    use ai_guardian::linux::*;
     use std::collections::HashMap;
 
     /// 测试 eBPF 监控器创建
