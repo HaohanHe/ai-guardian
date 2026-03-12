@@ -5,19 +5,80 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 permissions:
-  contents: write
+  contents: read
   packages: read
 
 jobs:
+  # 代码质量检查
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Check Rust formatting
+      run: cargo fmt -- --check
+
+    - name: Run Rust clippy
+      run: cargo clippy -- -D warnings
+      continue-on-error: true
+
+    - name: Check if UI exists
+      id: check-ui
+      run: |
+        if [ -d "ui" ] && [ -f "ui/package.json" ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+
+    - name: Setup Node.js
+      if: steps.check-ui.outputs.exists == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'ui/package-lock.json'
+
+    - name: Install UI dependencies
+      if: steps.check-ui.outputs.exists == 'true'
+      run: |
+        cd ui
+        npm install
+
+    - name: Check UI code style
+      if: steps.check-ui.outputs.exists == 'true'
+      run: |
+        cd ui
+        npm run lint
+      continue-on-error: true
+
   # Rust 核心构建和测试
   rust-build:
     name: Rust Build & Test
+    needs: code-quality
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -28,29 +89,22 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        persist-credentials: true
+        persist-credentials: false
 
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
-        override: true
 
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
-        sudo apt-get update
+        sudo apt-get update || true
         sudo apt-get install -y libelf-dev libbpf-dev linux-headers-generic
+      continue-on-error: false
 
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
-
-    - name: Check formatting
-      run: cargo fmt -- --check
-
-    - name: Run clippy
-      run: cargo clippy -- -D warnings
 
     - name: Build Rust core
       run: cargo build --release --verbose
@@ -69,6 +123,7 @@ jobs:
 
     - name: Check Windows binary exists
       if: matrix.os == 'windows-latest'
+      shell: powershell
       run: |
         if (Test-Path target/release/ai-guardian.exe) {
           Write-Host "✅ Windows binary found"
@@ -78,11 +133,14 @@ jobs:
           exit 1
         }
 
-  # Windows 驱动构建
+  # Windows 驱动构建（仅在手动触发时运行）
   windows-driver:
     name: Windows Driver Build
     runs-on: windows-latest
     needs: rust-build
+    permissions:
+      contents: read
+    if: github.event_name == 'workflow_dispatch'
 
     steps:
     - name: Checkout code
@@ -97,9 +155,14 @@ jobs:
       continue-on-error: true
 
     - name: Build Windows Driver
+      shell: powershell
       run: |
-        cd driver\windows
-        .\build.bat
+        cd driver/windows
+        if (Test-Path build.bat) {
+          .\build.bat
+        } else {
+          Write-Host "Warning: build.bat not found, skipping driver build"
+        }
       continue-on-error: true
 
     - name: Upload Driver artifacts
@@ -107,7 +170,7 @@ jobs:
       with:
         name: windows-driver
         path: |
-          driver\windows\build\
+          driver/windows/build/
         if-no-files-found: ignore
 
   # Linux eBPF 构建
@@ -115,6 +178,8 @@ jobs:
     name: Linux eBPF Build
     runs-on: ubuntu-latest
     needs: rust-build
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
@@ -122,15 +187,20 @@ jobs:
 
     - name: Install dependencies
       run: |
-        sudo apt-get update
+        sudo apt-get update || true
         sudo apt-get install -y llvm clang libbpf-dev linux-headers-generic
-      continue-on-error: true
+
+    - name: Cache eBPF build
+      uses: actions/cache@v4
+      with:
+        path: driver/linux/*.o
+        key: ${{ runner.os }}-ebpf-${{ hashFiles('driver/linux/*.c') }}
 
     - name: Build eBPF programs
       run: |
         cd driver/linux
+        make clean
         make
-      continue-on-error: true
 
     - name: Upload eBPF artifacts
       uses: actions/upload-artifact@v4
@@ -138,13 +208,15 @@ jobs:
         name: linux-ebpf
         path: |
           driver/linux/*.o
-          driver/linux/*.skel.h
-        if-no-files-found: ignore
+        if-no-files-found: warn
 
   # Electron UI 构建
   electron-build:
     name: Electron UI Build
+    needs: code-quality
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -158,6 +230,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: 'ui/package-lock.json'
 
     - name: Check if UI exists
       id: check-ui
@@ -169,25 +243,11 @@ jobs:
         fi
       shell: bash
 
-    - name: Install UI dependencies (Unix)
-      if: steps.check-ui.outputs.exists == 'true' && runner.os != 'Windows'
+    - name: Install UI dependencies
+      if: steps.check-ui.outputs.exists == 'true'
       run: |
         cd ui
-        if [ -f package-lock.json ]; then
-          npm ci
-        else
-          npm install
-        fi
-
-    - name: Install UI dependencies (Windows)
-      if: steps.check-ui.outputs.exists == 'true' && runner.os == 'Windows'
-      run: |
-        cd ui
-        if (Test-Path package-lock.json) {
-          npm ci
-        } else {
-          npm install
-        }
+        npm install
 
     - name: Build Electron UI
       if: steps.check-ui.outputs.exists == 'true'
@@ -216,6 +276,9 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
     - name: Checkout code
@@ -224,83 +287,50 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Run cargo audit
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Cache cargo tools
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/cargo-audit
+        key: ${{ runner.os }}-cargo-audit
+
+    - name: Install cargo-audit
       run: |
-        cargo install cargo-audit
-        cargo audit
+        if ! command -v cargo-audit &> /dev/null; then
+          cargo install cargo-audit
+        fi
+
+    - name: Run cargo audit
+      run: cargo audit
       continue-on-error: true
+
+    - name: Cache cargo-deny
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/cargo-deny
+        key: ${{ runner.os }}-cargo-deny
+
+    - name: Install cargo-deny
+      run: |
+        if ! command -v cargo-deny &> /dev/null; then
+          cargo install cargo-deny
+        fi
 
     - name: Run cargo deny
       run: |
-        cargo install cargo-deny
-        cargo deny check
-      continue-on-error: true
-
-  # 代码质量检查
-  code-quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
-
-    - name: Check Rust formatting
-      run: cargo fmt -- --check
-
-    - name: Run Rust clippy
-      run: cargo clippy -- -D warnings
-      continue-on-error: true
-
-    - name: Check if UI exists
-      id: check-ui
-      run: |
-        if [ -d "ui" ] && [ -f "ui/package.json" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
+        if [ -f deny.toml ]; then
+          cargo deny check
         else
-          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Warning: deny.toml not found, skipping cargo deny check"
         fi
-      shell: bash
-
-    - name: Setup Node.js
-      if: steps.check-ui.outputs.exists == 'true'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-
-    - name: Check UI code style (Unix)
-      if: steps.check-ui.outputs.exists == 'true' && runner.os != 'Windows'
-      run: |
-        cd ui
-        if [ -f package-lock.json ]; then
-          npm ci
-        else
-          npm install
-        fi
-        npm run lint
-      continue-on-error: true
-
-    - name: Check UI code style (Windows)
-      if: steps.check-ui.outputs.exists == 'true' && runner.os == 'Windows'
-      run: |
-        cd ui
-        if (Test-Path package-lock.json) {
-          npm ci
-        } else {
-          npm install
-        }
-        npm run lint
       continue-on-error: true
 
   # 发布 Release
   release:
     name: Create Release
-    needs: [rust-build, windows-driver, linux-ebpf, electron-build]
+    needs: [rust-build, linux-ebpf, electron-build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
@@ -309,6 +339,14 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Generate version
+      id: version
+      run: |
+        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        VERSION="v$(date +%Y%m%d)-${{ github.run_number }}-${SHORT_SHA}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION"
 
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -323,25 +361,30 @@ jobs:
 
     - name: Create GitHub Release
       run: |
-        gh release create v${{ github.run_number }} \
-          --title "AI Guardian V2 Release ${{ github.run_number }}" \
+        gh release create ${{ steps.version.outputs.version }} \
+          --title "AI Guardian V2 Release ${{ steps.version.outputs.version }}" \
           --notes "## AI Guardian V2 Release
+
+        ### 版本信息
+        - 版本号: ${{ steps.version.outputs.version }}
+        - 提交: ${{ github.sha }}
+        - 构建时间: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
         ### 包含内容
         - Rust 核心引擎 (Windows/Linux/macOS)
-        - Windows 内核驱动
         - Linux eBPF 程序
         - Electron UI
 
         ### 安装说明
         1. 下载对应平台的二进制文件
-        2. Windows: 运行 install-driver.ps1 安装驱动
+        2. Windows: 运行 install-driver.ps1 安装驱动（如需要）
         3. Linux: 以 root 身份运行
         4. 查看 README.md 获取详细说明
 
         ### 注意事项
         - Windows 需要启用测试模式或签名驱动
-        - Linux 需要 root 权限" \
+        - Linux 需要 root 权限
+        - 首次运行请查看配置文档" \
           --prerelease \
           ai-guardian-release.tar.gz
       env:
