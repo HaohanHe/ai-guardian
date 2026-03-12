@@ -68,7 +68,18 @@ jobs:
         path: |
           target/release/ai-guardian
           target/release/ai-guardian.exe
-        if-no-files-found: ignore
+        if-no-files-found: warn
+
+    - name: Check Windows binary exists
+      if: matrix.os == 'windows-latest'
+      run: |
+        if (Test-Path target/release/ai-guardian.exe) {
+          Write-Host "✅ Windows binary found"
+          Get-Item target/release/ai-guardian.exe
+        } else {
+          Write-Host "❌ Windows binary NOT found"
+          exit 1
+        }
 
   # Windows 驱动构建
   windows-driver:
