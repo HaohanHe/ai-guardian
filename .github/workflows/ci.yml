@@ -153,8 +153,8 @@ jobs:
         fi
       shell: bash
 
-    - name: Install UI dependencies
-      if: steps.check-ui.outputs.exists == 'true'
+    - name: Install UI dependencies (Unix)
+      if: steps.check-ui.outputs.exists == 'true' && runner.os != 'Windows'
       run: |
         cd ui
         if [ -f package-lock.json ]; then
@@ -162,6 +162,16 @@ jobs:
         else
           npm install
         fi
+
+    - name: Install UI dependencies (Windows)
+      if: steps.check-ui.outputs.exists == 'true' && runner.os == 'Windows'
+      run: |
+        cd ui
+        if (Test-Path package-lock.json) {
+          npm ci
+        } else {
+          npm install
+        }
 
     - name: Build Electron UI
       if: steps.check-ui.outputs.exists == 'true'
@@ -247,8 +257,8 @@ jobs:
       with:
         node-version: '20.x'
 
-    - name: Check UI code style
-      if: steps.check-ui.outputs.exists == 'true'
+    - name: Check UI code style (Unix)
+      if: steps.check-ui.outputs.exists == 'true' && runner.os != 'Windows'
       run: |
         cd ui
         if [ -f package-lock.json ]; then
@@ -256,6 +266,18 @@ jobs:
         else
           npm install
         fi
+        npm run lint
+      continue-on-error: true
+
+    - name: Check UI code style (Windows)
+      if: steps.check-ui.outputs.exists == 'true' && runner.os == 'Windows'
+      run: |
+        cd ui
+        if (Test-Path package-lock.json) {
+          npm ci
+        } else {
+          npm install
+        }
         npm run lint
       continue-on-error: true
 
