@@ -331,7 +331,8 @@ impl RiskEngine {
             if total_ops <= 10 {
                 return score;
             }
-            let decay_factor = (100.0 / (1.0 + ((total_ops - 10) as f32 / 10.0))).min(100.0) / 100.0;
+            let decay_factor =
+                (100.0 / (1.0 + ((total_ops - 10) as f32 / 10.0))).min(100.0) / 100.0;
             (score as f32 * decay_factor) as u32
         } else {
             score
