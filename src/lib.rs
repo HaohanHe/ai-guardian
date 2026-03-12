@@ -124,8 +124,8 @@ impl AiGuardian {
             let mut running = self.running.lock().unwrap();
             *running = true;
             log::info!("AI Guardian started successfully");
+            Ok(())
         }
-        Ok(())
     }
 
     /// 停止 AI Guardian
