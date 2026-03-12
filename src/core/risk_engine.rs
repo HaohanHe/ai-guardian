@@ -376,7 +376,7 @@ impl RiskEngine {
                         RuleCondition::PathContains("/sbin".to_string()),
                     ]),
                 ]),
-                risk_score: 95,
+                risk_score: 100,
                 enabled: true,
             },
             RiskRule {
