@@ -409,12 +409,21 @@ mod tests {
     
     #[test]
     fn test_connection_evaluation() {
-        let mut monitor = WfpNetworkMonitor::new();
+        let monitor = WfpNetworkMonitor::new();
         monitor.register_ai_process(1234);
         
         // 阻断特定 IP
         let blocked_ip: IpAddr = "10.0.0.1".parse().unwrap();
         monitor.block_ip(blocked_ip);
+        
+        // 验证 IP 已被阻断
+        {
+            let blocked = monitor.blocked_ips.lock().unwrap();
+            assert!(blocked.contains(&blocked_ip), "IP should be in blocked list");
+        }
+        
+        // 验证进程已注册
+        assert!(monitor.is_ai_process(1234), "Process should be registered");
         
         let event = NetworkEvent {
             event_type: NetworkEventType::Connect,
@@ -426,6 +435,6 @@ mod tests {
         };
         
         let decision = monitor.evaluate_connection(&event);
-        assert_eq!(decision, ConnectionDecision::Block);
+        assert_eq!(decision, ConnectionDecision::Block, "Connection to blocked IP should be blocked");
     }
 }

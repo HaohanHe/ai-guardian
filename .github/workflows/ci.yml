@@ -29,6 +29,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
+        toolchain: stable
         components: rustfmt, clippy
 
     - name: Cache Rust dependencies
@@ -93,8 +94,6 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ matrix.rust }}
 
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
