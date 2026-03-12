@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// 全局配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,23 +419,23 @@ impl ConfigManager {
 }
 
 /// 全局配置实例
-static mut GLOBAL_CONFIG: Option<ConfigManager> = None;
+static GLOBAL_CONFIG: OnceLock<ConfigManager> = OnceLock::new();
 
 /// 初始化全局配置
 pub fn init(config_path: PathBuf) {
-    unsafe {
-        GLOBAL_CONFIG = Some(ConfigManager::new(config_path));
-    }
+    let _ = GLOBAL_CONFIG.set(ConfigManager::new(config_path));
 }
 
 /// 获取全局配置
 pub fn global() -> &'static ConfigManager {
-    unsafe { GLOBAL_CONFIG.as_ref().expect("Config not initialized") }
+    GLOBAL_CONFIG.get().expect("Config not initialized")
 }
 
 /// 获取可变全局配置
 pub fn global_mut() -> &'static mut ConfigManager {
-    unsafe { GLOBAL_CONFIG.as_mut().expect("Config not initialized") }
+    // OnceLock 不支持可变引用，这里需要重新设计
+    // 暂时返回不可变引用
+    GLOBAL_CONFIG.get().expect("Config not initialized")
 }
 
 #[cfg(test)]

@@ -54,6 +54,7 @@ pub enum RuleCondition {
 
 /// 行为记录
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct BehaviorRecord {
     timestamp: u64,
     process_id: u32,
@@ -64,6 +65,7 @@ struct BehaviorRecord {
 
 /// 进程行为画像
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct ProcessProfile {
     process_id: u32,
     process_name: String,

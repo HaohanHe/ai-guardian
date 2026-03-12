@@ -437,14 +437,14 @@ pub fn initialize() -> anyhow::Result<()> {
 }
 
 /// 获取全局引擎引用
-pub fn engine() -> Option<&'static Box<dyn GuardianEngine + Send>> {
-    GLOBAL_ENGINE.get()
+pub fn engine() -> Option<&'static (dyn GuardianEngine + Send)> {
+    GLOBAL_ENGINE.get().map(|b| b.as_ref())
 }
 
 /// 关闭全局引擎
 pub fn shutdown() {
     // OnceLock 不支持 take，这里只能标记关闭状态
-    if let Some(engine) = GLOBAL_ENGINE.get() {
+    if GLOBAL_ENGINE.get().is_some() {
         // 由于无法获取可变引用，这里需要重新设计
         // 暂时跳过
     }
