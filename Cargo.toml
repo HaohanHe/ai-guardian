@@ -39,9 +39,10 @@ windows = { version = "0.52", features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libbpf-rs = "0.22"
-libbpf-sys = "1.3"
 nix = { version = "0.27", features = ["process", "user"] }
+# libbpf 依赖暂时禁用，需要手动安装 libelf-dev
+# libbpf-rs = { version = "0.22", optional = true }
+# libbpf-sys = { version = "1.3", optional = true }
 
 [dev-dependencies]
 tempfile = "3.9"
