@@ -6,9 +6,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use windows::core::{Result, HSTRING};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, ERROR_SUCCESS};
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::Diagnostics::Etw::*;
-use windows::Win32::System::Threading::GetCurrentProcessId;
 
 /// 进程事件类型
 #[derive(Debug, Clone)]
