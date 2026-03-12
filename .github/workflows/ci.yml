@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+  packages: read
+
 jobs:
   # Rust 核心构建和测试
   rust-build:
@@ -290,6 +294,8 @@ jobs:
     needs: [rust-build, windows-driver, linux-ebpf, electron-build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout code
@@ -307,39 +313,27 @@ jobs:
         tar -czf ai-guardian-release.tar.gz release/
 
     - name: Create GitHub Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ github.run_number }}
-        release_name: AI Guardian V2 Release ${{ github.run_number }}
-        body: |
-          ## AI Guardian V2 Release
-          
-          ### 包含内容
-          - Rust 核心引擎 (Windows/Linux/macOS)
-          - Windows 内核驱动
-          - Linux eBPF 程序
-          - Electron UI
-          
-          ### 安装说明
-          1. 下载对应平台的二进制文件
-          2. Windows: 运行 install-driver.ps1 安装驱动
-          3. Linux: 以 root 身份运行
-          4. 查看 README.md 获取详细说明
-          
-          ### 注意事项
-          - Windows 需要启用测试模式或签名驱动
-          - Linux 需要 root 权限
-        draft: false
-        prerelease: true
+      run: |
+        gh release create v${{ github.run_number }} \
+          --title "AI Guardian V2 Release ${{ github.run_number }}" \
+          --notes "## AI Guardian V2 Release
 
-    - name: Upload Release Assets
-      uses: actions/upload-release-asset@v1
+        ### 包含内容
+        - Rust 核心引擎 (Windows/Linux/macOS)
+        - Windows 内核驱动
+        - Linux eBPF 程序
+        - Electron UI
+
+        ### 安装说明
+        1. 下载对应平台的二进制文件
+        2. Windows: 运行 install-driver.ps1 安装驱动
+        3. Linux: 以 root 身份运行
+        4. 查看 README.md 获取详细说明
+
+        ### 注意事项
+        - Windows 需要启用测试模式或签名驱动
+        - Linux 需要 root 权限" \
+          --prerelease \
+          ai-guardian-release.tar.gz
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./ai-guardian-release.tar.gz
-        asset_name: ai-guardian-v${{ github.run_number }}.tar.gz
-        asset_content_type: application/gzip
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
