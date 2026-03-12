@@ -241,7 +241,11 @@ impl AiAnalyzer {
             RiskPattern {
                 name: "Data Exfiltration".to_string(),
                 description: "Potential data theft".to_string(),
-                operation_types: vec![OperationType::FileRead, OperationType::NetworkConnect],
+                operation_types: vec![
+                    OperationType::FileRead,
+                    OperationType::NetworkConnect,
+                    OperationType::ProcessExec,
+                ],
                 keywords: vec![
                     "tar czf -".to_string(),
                     "zip -r -".to_string(),
@@ -274,6 +278,8 @@ impl AiAnalyzer {
                     "lsass".to_string(),
                     "sam".to_string(),
                     "security account manager".to_string(),
+                    "minidump".to_string(),
+                    "comsvcs".to_string(),
                 ],
                 risk_score: 95,
             },

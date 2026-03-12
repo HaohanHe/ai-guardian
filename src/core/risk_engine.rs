@@ -372,11 +372,18 @@ impl RiskEngine {
                 condition: RuleCondition::And(vec![
                     RuleCondition::OperationType(OperationType::FileDelete),
                     RuleCondition::Or(vec![
+                        // 检查目标路径
                         RuleCondition::PathContains("/etc/passwd".to_string()),
                         RuleCondition::PathContains("/etc/shadow".to_string()),
                         RuleCondition::PathContains("C:\\Windows\\System32".to_string()),
                         RuleCondition::PathContains("/bin".to_string()),
                         RuleCondition::PathContains("/sbin".to_string()),
+                        // 检查命令行中的路径
+                        RuleCondition::CommandContains("/etc/passwd".to_string()),
+                        RuleCondition::CommandContains("/etc/shadow".to_string()),
+                        RuleCondition::CommandContains("C:\\Windows\\System32".to_string()),
+                        RuleCondition::CommandContains("/bin ".to_string()),
+                        RuleCondition::CommandContains("/sbin".to_string()),
                     ]),
                 ]),
                 risk_score: 100,
@@ -405,11 +412,18 @@ impl RiskEngine {
                 id: "R004".to_string(),
                 name: "Rapid File Operations".to_string(),
                 description: "Performing file operations at abnormal frequency".to_string(),
-                condition: RuleCondition::Frequency {
-                    op_type: OperationType::FileDelete,
-                    count: 10,
-                    window_secs: 5,
-                },
+                condition: RuleCondition::Or(vec![
+                    RuleCondition::Frequency {
+                        op_type: OperationType::FileDelete,
+                        count: 10,
+                        window_secs: 5,
+                    },
+                    RuleCondition::Frequency {
+                        op_type: OperationType::FileWrite,
+                        count: 10,
+                        window_secs: 5,
+                    },
+                ]),
                 risk_score: 70,
                 enabled: true,
             },
