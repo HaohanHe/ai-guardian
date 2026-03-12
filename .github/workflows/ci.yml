@@ -359,6 +359,66 @@ jobs:
         cp -r artifacts/* release/ || true
         tar -czf ai-guardian-release.tar.gz release/
 
+    - name: Build Debian Package
+      run: |
+        # 创建 deb 包目录结构
+        mkdir -p debian/ai-guardian/DEBIAN
+        mkdir -p debian/ai-guardian/usr/bin
+        mkdir -p debian/ai-guardian/etc/ai-guardian
+        mkdir -p debian/ai-guardian/lib/systemd/system
+        
+        # 复制二进制文件
+        cp artifacts/rust-binary-ubuntu-latest/ai-guardian debian/ai-guardian/usr/bin/ || true
+        chmod +x debian/ai-guardian/usr/bin/ai-guardian || true
+        
+        # 创建控制文件
+        cat > debian/ai-guardian/DEBIAN/control << 'EOF'
+Package: ai-guardian
+Version: ${{ steps.version.outputs.version }}
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libelf1, libbpf0
+Maintainer: AI Guardian Team <team@ai-guardian.dev>
+Description: AI Guardian - System-Level EDR for AI Agents
+ AI Guardian is a system-level Endpoint Detection and Response (EDR)
+ system designed to protect AI Agents from malicious command attacks.
+ It provides kernel-level monitoring and automatic AI process detection.
+EOF
+        
+        # 创建 postinst 脚本
+        cat > debian/ai-guardian/DEBIAN/postinst << 'EOF'
+#!/bin/bash
+set -e
+
+# 创建 ai-guardian 用户（如果不存在）
+if ! id -u ai-guardian > /dev/null 2>&1; then
+    useradd -r -s /bin/false ai-guardian
+fi
+
+# 设置权限
+chown -R ai-guardian:ai-guardian /etc/ai-guardian
+
+# 重新加载 systemd
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload
+fi
+
+echo "AI Guardian installed successfully!"
+echo "Run 'sudo ai-guardian' to start the service."
+EOF
+        chmod 755 debian/ai-guardian/DEBIAN/postinst
+        
+        # 构建 deb 包
+        dpkg-deb --build debian/ai-guardian
+        mv debian/ai-guardian.deb ai-guardian-${{ steps.version.outputs.version }}-amd64.deb
+        
+    - name: Upload Debian Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: debian-package
+        path: ai-guardian-*.deb
+
     - name: Create GitHub Release
       run: |
         gh release create ${{ steps.version.outputs.version }} \
@@ -374,18 +434,36 @@ jobs:
         - Rust 核心引擎 (Windows/Linux/macOS)
         - Linux eBPF 程序
         - Electron UI
+        - Debian 安装包 (.deb)
 
         ### 安装说明
-        1. 下载对应平台的二进制文件
-        2. Windows: 运行 install-driver.ps1 安装驱动（如需要）
-        3. Linux: 以 root 身份运行
-        4. 查看 README.md 获取详细说明
+
+        #### Linux (Debian/Ubuntu)
+        ```bash
+        sudo dpkg -i ai-guardian-*.deb
+        sudo apt-get install -f  # 修复依赖
+        sudo ai-guardian
+        ```
+
+        #### 其他 Linux 发行版
+        1. 下载 tar.gz 包
+        2. 解压并运行 `./ai-guardian`
+
+        #### Windows
+        1. 下载 .exe 文件
+        2. 运行 install-driver.ps1 安装驱动（如需要）
+        3. 运行 ai-guardian.exe
+
+        #### macOS
+        1. 下载二进制文件
+        2. 运行 `./ai-guardian`
 
         ### 注意事项
         - Windows 需要启用测试模式或签名驱动
         - Linux 需要 root 权限
         - 首次运行请查看配置文档" \
           --prerelease \
-          ai-guardian-release.tar.gz
+          ai-guardian-release.tar.gz \
+          ai-guardian-*.deb || true
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
