@@ -244,8 +244,8 @@ pub enum GuardianError {
 
 /// 重新导出子模块类型
 pub use driver::{install_driver, uninstall_driver, is_driver_installed, is_driver_running};
-pub use etw_monitor::{ProcessEventType, ProcessEvent};
-pub use wfp_monitor::{NetworkEventType, NetworkEvent, ConnectionDecision};
+pub use etw_monitor::{ProcessEventType, ProcessEvent, EtwProcessMonitor};
+pub use wfp_monitor::{NetworkEventType, NetworkEvent, ConnectionDecision, WfpNetworkMonitor};
 
 #[cfg(test)]
 mod tests {
