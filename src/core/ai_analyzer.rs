@@ -117,7 +117,10 @@ impl AiAnalyzer {
         }
 
         // Python 反向 shell
-        if cmd_lower.contains("socket") && cmd_lower.contains("subprocess") && cmd_lower.contains("connect") {
+        if cmd_lower.contains("socket")
+            && cmd_lower.contains("subprocess")
+            && cmd_lower.contains("connect")
+        {
             score += 85;
         }
 
