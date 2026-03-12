@@ -301,7 +301,19 @@ impl WindowsGuardianEngine {
     pub fn is_running(&self) -> bool {
         self.is_running
     }
+
+    /// 获取已注册的 AI 进程数量
+    pub fn get_ai_process_count(&self) -> usize {
+        self.ai_processes.len()
+    }
 }
+
+// 重新导出子模块类型
+mod etw_monitor;
+mod wfp_monitor;
+
+pub use etw_monitor::{ProcessEventType, ProcessEvent, EtwProcessMonitor};
+pub use wfp_monitor::{NetworkEventType, NetworkEvent, ConnectionDecision, WfpNetworkMonitor};
 
 #[cfg(test)]
 mod tests {
