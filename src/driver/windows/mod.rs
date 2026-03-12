@@ -3,7 +3,6 @@
 //! 与内核驱动通信，管理 AI 终端进程列表
 
 use std::ffi::c_void;
-use std::ptr::null_mut;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::{

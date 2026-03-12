@@ -3,7 +3,6 @@
 //! 使用本地 LLM 进行命令语义分析
 
 use super::{OperationEvent, OperationType};
-use std::collections::HashMap;
 
 /// AI 分析器
 pub struct AiAnalyzer {

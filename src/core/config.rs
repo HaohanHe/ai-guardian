@@ -3,7 +3,6 @@
 //! 系统配置管理
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
