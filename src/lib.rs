@@ -109,6 +109,7 @@ impl AiGuardian {
                 .start()
                 .map_err(|e| GuardianError::MonitorError(e.to_string()))?;
             self.monitor = Some(monitor);
+            return Ok(());
         }
 
         #[cfg(target_os = "linux")]
