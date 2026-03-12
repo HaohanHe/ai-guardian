@@ -293,7 +293,8 @@ impl GuardianEngine for WindowsEngine {
         let ai_count = self.ai_processes.lock().unwrap().len();
 
         EngineStats {
-            total_events_processed: driver_stats.total_events_allowed + driver_stats.total_events_blocked,
+            total_events_processed: driver_stats.total_events_allowed
+                + driver_stats.total_events_blocked,
             total_events_blocked: driver_stats.total_events_blocked,
             total_events_allowed: driver_stats.total_events_allowed,
             ai_process_count: ai_count,

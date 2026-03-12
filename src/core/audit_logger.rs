@@ -12,7 +12,6 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-
 /// 审计日志条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogEntry {
