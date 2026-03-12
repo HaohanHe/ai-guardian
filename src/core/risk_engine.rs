@@ -434,13 +434,13 @@ impl RiskEngine {
                 condition: RuleCondition::Or(vec![
                     RuleCondition::Frequency {
                         op_type: OperationType::FileDelete,
-                        count: 10,
-                        window_secs: 5,
+                        count: 5,
+                        window_secs: 60,
                     },
                     RuleCondition::Frequency {
                         op_type: OperationType::FileWrite,
-                        count: 10,
-                        window_secs: 5,
+                        count: 5,
+                        window_secs: 60,
                     },
                 ]),
                 risk_score: 70,
