@@ -312,8 +312,8 @@ impl WindowsGuardianEngine {
 mod etw_monitor;
 mod wfp_monitor;
 
-pub use etw_monitor::{ProcessEventType, ProcessEvent, EtwProcessMonitor};
-pub use wfp_monitor::{NetworkEventType, NetworkEvent, ConnectionDecision, WfpNetworkMonitor};
+pub use etw_monitor::{EtwProcessMonitor, ProcessEvent, ProcessEventType};
+pub use wfp_monitor::{ConnectionDecision, NetworkEvent, NetworkEventType, WfpNetworkMonitor};
 
 #[cfg(test)]
 mod tests {

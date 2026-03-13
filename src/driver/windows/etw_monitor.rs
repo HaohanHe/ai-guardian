@@ -54,11 +54,14 @@ impl EtwProcessMonitor {
     /// 注册 AI 终端进程
     pub fn register_ai_process(&self, pid: u32, name: &str) {
         let mut processes = self.ai_processes.lock().unwrap();
-        processes.insert(pid, ProcessInfo {
+        processes.insert(
             pid,
-            name: name.to_string(),
-            start_time: Self::get_timestamp(),
-        });
+            ProcessInfo {
+                pid,
+                name: name.to_string(),
+                start_time: Self::get_timestamp(),
+            },
+        );
         log::info!("ETW: Registered AI process {} ({})", pid, name);
     }
 
@@ -103,9 +106,10 @@ impl EtwProcessMonitor {
             let provider_guid = HSTRING::from("{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}");
 
             // 设置事件回调
-            let callback: Arc<Mutex<dyn FnMut(&EVENT_RECORD)>> = Arc::new(Mutex::new(|event: &EVENT_RECORD| {
-                self.process_event(event);
-            }));
+            let callback: Arc<Mutex<dyn FnMut(&EVENT_RECORD)>> =
+                Arc::new(Mutex::new(|event: &EVENT_RECORD| {
+                    self.process_event(event);
+                }));
 
             log::info!("ETW Process Monitor started");
             Ok(())
@@ -129,14 +133,14 @@ impl EtwProcessMonitor {
         let event_id = event.EventHeader.EventDescriptor.Id;
 
         match event_id {
-            1 => { // Process Start
+            1 => {
+                // Process Start
                 if let Some(event_data) = unsafe { self.parse_process_start_event(event) } {
-                    if self.is_ai_related_process(event_data.process_id, event_data.parent_process_id) {
+                    if self
+                        .is_ai_related_process(event_data.process_id, event_data.parent_process_id)
+                    {
                         // 自动注册子进程
-                        self.register_ai_process(
-                            event_data.process_id,
-                            &event_data.process_name
-                        );
+                        self.register_ai_process(event_data.process_id, &event_data.process_name);
 
                         if let Some(ref callback) = self.event_callback {
                             callback(event_data);
@@ -144,7 +148,8 @@ impl EtwProcessMonitor {
                     }
                 }
             }
-            2 => { // Process Stop
+            2 => {
+                // Process Stop
                 if let Some(event_data) = unsafe { self.parse_process_stop_event(event) } {
                     if self.is_ai_related_process(event_data.process_id, 0) {
                         self.unregister_ai_process(event_data.process_id);
@@ -165,10 +170,8 @@ impl EtwProcessMonitor {
         // 事件数据结构参考：
         // https://docs.microsoft.com/en-us/windows/win32/etw/c-processtypedef
 
-        let data = std::slice::from_raw_parts(
-            event.UserData as *const u8,
-            event.UserDataLength as usize
-        );
+        let data =
+            std::slice::from_raw_parts(event.UserData as *const u8, event.UserDataLength as usize);
 
         if data.len() < 16 {
             return None;
@@ -190,10 +193,8 @@ impl EtwProcessMonitor {
 
     /// 解析进程终止事件
     unsafe fn parse_process_stop_event(&self, event: &EVENT_RECORD) -> Option<ProcessEvent> {
-        let data = std::slice::from_raw_parts(
-            event.UserData as *const u8,
-            event.UserDataLength as usize
-        );
+        let data =
+            std::slice::from_raw_parts(event.UserData as *const u8, event.UserDataLength as usize);
 
         if data.len() < 4 {
             return None;
@@ -234,7 +235,12 @@ pub mod wmi_fallback {
     /// 获取进程列表
     pub fn get_process_list() -> Vec<(u32, String, u32)> {
         let output = Command::new("wmic")
-            .args(&["process", "get", "ProcessId,Name,ParentProcessId", "/format:csv"])
+            .args(&[
+                "process",
+                "get",
+                "ProcessId,Name,ParentProcessId",
+                "/format:csv",
+            ])
             .output();
 
         match output {
@@ -249,7 +255,8 @@ pub mod wmi_fallback {
     fn parse_wmic_output(output: &str) -> Vec<(u32, String, u32)> {
         let mut processes = Vec::new();
 
-        for line in output.lines().skip(1) { // 跳过标题行
+        for line in output.lines().skip(1) {
+            // 跳过标题行
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() >= 4 {
                 if let (Ok(pid), Ok(ppid)) = (parts[2].trim().parse(), parts[3].trim().parse()) {
@@ -264,8 +271,14 @@ pub mod wmi_fallback {
     /// 获取进程命令行
     pub fn get_process_command_line(pid: u32) -> Option<String> {
         let output = Command::new("wmic")
-            .args(&["process", "where", &format!("ProcessId={}", pid),
-                   "get", "CommandLine", "/value"])
+            .args(&[
+                "process",
+                "where",
+                &format!("ProcessId={}", pid),
+                "get",
+                "CommandLine",
+                "/value",
+            ])
             .output()
             .ok()?;
 

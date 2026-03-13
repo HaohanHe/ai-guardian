@@ -151,7 +151,10 @@ impl WfpNetworkMonitor {
         {
             let blocked_ips = self.blocked_ips.lock().unwrap();
             if blocked_ips.contains(&event.remote_addr.ip()) {
-                log::warn!("WFP: Blocking connection to blocked IP {}", event.remote_addr.ip());
+                log::warn!(
+                    "WFP: Blocking connection to blocked IP {}",
+                    event.remote_addr.ip()
+                );
                 return ConnectionDecision::Block;
             }
         }
@@ -159,7 +162,10 @@ impl WfpNetworkMonitor {
         {
             let blocked_ports = self.blocked_ports.lock().unwrap();
             if blocked_ports.contains(&event.remote_addr.port()) {
-                log::warn!("WFP: Blocking connection to blocked port {}", event.remote_addr.port());
+                log::warn!(
+                    "WFP: Blocking connection to blocked port {}",
+                    event.remote_addr.port()
+                );
                 return ConnectionDecision::Block;
             }
         }
@@ -202,8 +208,8 @@ impl Drop for WfpNetworkMonitor {
 
 /// 使用 netsh 进行网络监控（备用方案）
 pub mod netsh_fallback {
-    use std::process::Command;
     use std::net::SocketAddr;
+    use std::process::Command;
 
     /// 获取活动连接列表
     pub fn get_active_connections() -> Vec<ConnectionInfo> {
@@ -239,11 +245,9 @@ pub mod netsh_fallback {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 5 {
                     // 解析地址和 PID
-                    if let (Ok(local), Ok(remote), Ok(pid)) = (
-                        parts[1].parse(),
-                        parts[2].parse(),
-                        parts[4].parse()
-                    ) {
+                    if let (Ok(local), Ok(remote), Ok(pid)) =
+                        (parts[1].parse(), parts[2].parse(), parts[4].parse())
+                    {
                         connections.push(ConnectionInfo {
                             local_addr: local,
                             remote_addr: remote,
@@ -264,7 +268,10 @@ pub mod netsh_fallback {
 
         let output = Command::new("netsh")
             .args(&[
-                "advfirewall", "firewall", "add", "rule",
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
                 &format!("name={}", rule_name),
                 "dir=out",
                 "action=block",
@@ -286,7 +293,10 @@ pub mod netsh_fallback {
 
         let output = Command::new("netsh")
             .args(&[
-                "advfirewall", "firewall", "delete", "rule",
+                "advfirewall",
+                "firewall",
+                "delete",
+                "rule",
                 &format!("name={}", rule_name),
             ])
             .output()
@@ -302,9 +312,9 @@ pub mod netsh_fallback {
 
 /// 可疑 IP/域名数据库
 pub mod threat_intel {
+    use lazy_static::lazy_static;
     use std::collections::HashSet;
     use std::net::IpAddr;
-    use lazy_static::lazy_static;
 
     lazy_static! {
         /// 已知恶意 IP 列表
@@ -419,7 +429,10 @@ mod tests {
         // 验证 IP 已被阻断
         {
             let blocked = monitor.blocked_ips.lock().unwrap();
-            assert!(blocked.contains(&blocked_ip), "IP should be in blocked list");
+            assert!(
+                blocked.contains(&blocked_ip),
+                "IP should be in blocked list"
+            );
         }
 
         // 验证进程已注册
@@ -435,6 +448,10 @@ mod tests {
         };
 
         let decision = monitor.evaluate_connection(&event);
-        assert_eq!(decision, ConnectionDecision::Block, "Connection to blocked IP should be blocked");
+        assert_eq!(
+            decision,
+            ConnectionDecision::Block,
+            "Connection to blocked IP should be blocked"
+        );
     }
 }
