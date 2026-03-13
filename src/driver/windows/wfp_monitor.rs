@@ -340,11 +340,13 @@ pub mod threat_intel {
 
     /// 检查 IP 是否可疑
     pub fn is_suspicious_ip(ip: &IpAddr) -> bool {
+        use crate::driver::windows::wfp_monitor::threat_intel::MALICIOUS_IPS;
         MALICIOUS_IPS.contains(ip)
     }
 
     /// 检查端口是否可疑
     pub fn is_suspicious_port(port: u16) -> bool {
+        use crate::driver::windows::wfp_monitor::threat_intel::SUSPICIOUS_PORTS;
         SUSPICIOUS_PORTS.contains(&port)
     }
 

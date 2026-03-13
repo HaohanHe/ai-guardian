@@ -6,8 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use windows::core::{Result, HSTRING};
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::System::Diagnostics::Etw::*;
+use windows::Win32::System::Diagnostics::Etw::{self, EVENT_RECORD, TRACEHANDLE};
 
 /// 进程事件类型
 #[derive(Debug, Clone)]

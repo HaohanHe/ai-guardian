@@ -22,6 +22,9 @@ toml = "0.8"
 # Cryptography
 sha2 = "0.10"
 
+# Lazy initialization
+lazy_static = "1.4"
+
 # Async runtime
 futures = "0.3"
 
