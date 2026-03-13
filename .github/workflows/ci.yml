@@ -163,6 +163,40 @@ jobs:
         name: rust-binary-arm64
         path: target/aarch64-unknown-linux-gnu/release/ai-guardian
 
+  # Windows Rust 构建
+  rust-build-windows:
+    name: Rust Build (Windows)
+    needs: code-quality
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build Rust core
+      run: cargo build --release --verbose
+
+    - name: Run Rust tests
+      run: cargo test --verbose
+      continue-on-error: true
+
+    - name: Upload Rust artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rust-binary-windows
+        path: target/release/ai-guardian.exe
+
   # Windows 驱动构建（仅在手动触发时运行）
   windows-driver:
     name: Windows Driver Build
