@@ -14,6 +14,7 @@
 pub mod core;
 pub mod driver;
 pub mod monitor;
+pub mod web;
 
 // Platform-specific modules
 #[cfg(windows)]

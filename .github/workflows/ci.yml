@@ -522,25 +522,60 @@ jobs:
           echo "Windows build may have failed" > windows-package/BUILD_FAILED.txt
         fi
         
-        # 创建 Windows 安装脚本
-        cat > windows-package/install-driver.ps1 << 'EOF'
-        # AI Guardian Driver Installer
-        # Run as Administrator
-        
-        Write-Host "Installing AI Guardian Driver..."
-        
-        # Check if running as admin
-        if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-            Write-Error "Please run as Administrator"
+        # 复制完整的安装脚本
+        if [ -f driver/windows/install-driver.ps1 ]; then
+          cp driver/windows/install-driver.ps1 windows-package/
+          cp driver/windows/uninstall-driver.ps1 windows-package/
+          echo "✅ Driver scripts copied"
+        else
+          echo "⚠️ Driver scripts not found, creating basic version"
+          cat > windows-package/install-driver.ps1 << 'EOF'
+        param([switch]$Force, [switch]$SkipTestSign)
+
+        $ErrorActionPreference = "Stop"
+        $ProgressPreference = "SilentlyContinue"
+
+        $DriverName = "AiGuardianDriver"
+
+        function Write-Log {
+            param([string]$Message, [string]$Level = "INFO")
+            $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            $color = switch ($Level) {
+                "ERROR" { "Red" }
+                "WARN" { "Yellow" }
+                "SUCCESS" { "Green" }
+                default { "White" }
+            }
+            Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+        }
+
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "  AI Guardian Driver Installer" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host ""
+
+        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+        if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            Write-Log "This script requires Administrator privileges" "ERROR"
             exit 1
         }
-        
-        # Enable test mode for unsigned driver
-        Write-Host "Enabling Windows test mode for unsigned driver..."
+
+        Write-Log "Enabling test signing mode..."
         bcdedit /set testsigning on
-        
-        Write-Host "Driver installation complete. Please reboot and run ai-guardian.exe"
+
+        Write-Log "Driver installation complete!" "SUCCESS"
+        Write-Host ""
         EOF
+        fi
+        
+        # 复制驱动文件
+        if [ -d driver/windows/AiGuardianDriver ]; then
+          mkdir -p windows-package/driver
+          cp -r driver/windows/AiGuardianDriver windows-package/driver/
+          echo "✅ Driver files copied"
+        fi
         
         # 创建 README
         cat > windows-package/README.txt << 'EOF'
@@ -554,11 +589,23 @@ jobs:
         
         Installation:
         1. Run install-driver.ps1 as Administrator
-        2. Reboot computer
+           PowerShell -ExecutionPolicy Bypass -File install-driver.ps1
+        2. Reboot computer (if prompted)
         3. Run ai-guardian.exe
+        
+        Uninstallation:
+        1. Run uninstall-driver.ps1 as Administrator
+           PowerShell -ExecutionPolicy Bypass -File uninstall-driver.ps1
         
         Note: The driver is currently unsigned. You need to enable
         Windows test mode or sign the driver with a valid certificate.
+        EOF
+        
+        # 创建快速启动脚本
+        cat > windows-package/start.bat << 'EOF'
+        @echo off
+        echo Starting AI Guardian...
+        start "" ai-guardian.exe
         EOF
         
         # 打包 Windows 版本

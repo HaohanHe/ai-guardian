@@ -1,51 +1,22 @@
-/**
- * AI Guardian - Main Entry Point
- */
-use ai_guardian::core::config::ConfigManager;
-use ai_guardian::{initialize, shutdown};
-use std::path::PathBuf;
+use ai_guardian::web::ApiServer;
+use std::env;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize logging
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("AI Guardian V2.0 Starting...");
 
-    // Load configuration
-    let config_path = PathBuf::from("config.toml");
-    let config_manager = ConfigManager::new(config_path);
+    let port = env::var("AI_GUARDIAN_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(9876);
 
-    // Validate configuration
-    let errors = config_manager.validate();
-    if !errors.is_empty() {
-        for error in &errors {
-            log::error!("Config error: {}", error);
-        }
-        return Err(anyhow::anyhow!("Configuration validation failed"));
-    }
-
-    log::info!("Configuration loaded successfully");
-
-    // Initialize the guardian engine
-    match initialize() {
-        Ok(_) => {
-            log::info!("AI Guardian engine initialized");
-        }
-        Err(e) => {
-            log::error!("Failed to initialize engine: {}", e);
-            return Err(e);
-        }
-    }
-
-    // Run the main loop
-    log::info!("AI Guardian is running. Press Ctrl+C to stop.");
-
-    // Wait for shutdown signal
-    tokio::signal::ctrl_c().await?;
-
-    log::info!("Shutting down AI Guardian...");
-    shutdown();
+    let server = ApiServer::new(port);
+    
+    log::info!("Starting API server on port {}", port);
+    
+    server.start().await?;
 
     log::info!("AI Guardian stopped.");
     Ok(())
