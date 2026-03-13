@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use windows::core::{Result, HSTRING};
-use windows::Win32::System::Diagnostics::Etw::{self, EVENT_RECORD, TRACEHANDLE};
+use windows::Win32::System::Diagnostics::Etw::EVENT_RECORD;
 
 /// 进程事件类型
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct ProcessEvent {
 
 /// ETW 进程监控器
 pub struct EtwProcessMonitor {
-    session_handle: TRACEHANDLE,
+    session_handle: u64,
     ai_processes: Arc<Mutex<HashMap<u32, ProcessInfo>>>,
     event_callback: Option<Box<dyn Fn(ProcessEvent) + Send + Sync>>,
 }
