@@ -1,7 +1,7 @@
 # AI Guardian V2 - 系统级 EDR 安全系统
 
 <p align="center">
-  <strong>🛡️ AI Agent 专用终端检测与响应系统</strong>
+  <strong> AI Agent 专用终端检测与响应系统</strong>
 </p>
 
 <p align="center">
@@ -13,31 +13,23 @@
 
 ---
 
-## ⚠️ 重要提示
 
-> **当前状态**: 核心代码已完成 ✅ | **需要构建** 🔨 | **需要测试** 🧪
->
-> 详细状态请查看 [NEXT_STEPS.md](NEXT_STEPS.md)
+## 简介
 
----
-
-## 🎯 简介
-
-AI Guardian V2 是一个专为 AI Agent（如 OpenClaw、AutoClaw 等）设计的**系统级 EDR（终端检测与响应）**安全系统。它运行在操作系统内核层，与 360、火绒、Windows Defender 等安全软件同一级别，能够实时监控和阻断 AI Agent 的恶意操作。
-
+AI Guardian V2 是一个为 AI Agent（如 OpenClaw、AutoClaw， CoPaw等）设计的**系统级 EDR（终端检测与响应）**安全系统。它运行在操作系统内核层，与 360、火绒、Windows Defender 等安全软件同一级别，能够实时监控和阻断 AI Agent 的恶意操作，简而言之防止ai agent犯浑。你知道的，我一向是反对胡乱瞎整给llm最高权限的，有的时候你不得寻思寻思吗，有的人说llm他没有意识，有没有意识咋的他客观上造成损失就是不行，那就得防，因此本软件的立项原因出现了，防止ai犯浑，比如瞎删一堆东西，比如车轱辘话，比如执行危险代码，比如擅自自动提权，总之发现问题直接熔断，掐脖捏死，照ai话讲叫llm的检察院。
 ### 核心特性
 
-- 🔒 **系统级防护** - 内核驱动级别监控，与杀毒软件同级
-- 🤖 **AI 终端识别** - 只监控标记的 AI Agent 进程，不影响用户正常操作
-- ⚡ **实时拦截** - 毫秒级响应，即时阻断危险操作
-- 🧠 **AI 分析引擎** - 智能语义分析，识别恶意命令
-- 📊 **风险评估** - 基于规则的实时风险评分
-- 📝 **审计日志** - 区块链式防篡改日志记录
-- 🖥️ **跨平台** - 支持 Windows (Minifilter) 和 Linux (eBPF)
+- **系统级防护** - 内核驱动级别监控，与杀毒软件同级
+- **AI 终端识别** - 只监控标记的 AI Agent 进程，不影响用户正常操作
+- **实时拦截** - 毫秒级响应，即时阻断危险操作
+- **AI 分析引擎** - 智能语义分析，识别恶意命令
+- **风险评估** - 基于规则的实时风险评分
+- **审计日志** - 区块链式防篡改日志记录
+- **跨平台** - 支持 Windows (Minifilter) 和 Linux (eBPF)
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 
@@ -88,7 +80,7 @@ cargo test
 
 ---
 
-## 🔨 构建指南
+##  构建指南
 
 ### 详细构建步骤
 
@@ -112,7 +104,7 @@ bcdedit /set testsigning on
 
 ---
 
-## 🏗️ 系统架构
+##  系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -146,7 +138,7 @@ bcdedit /set testsigning on
 
 ---
 
-## 📖 文档
+## 文档
 
 | 文档 | 说明 |
 |------|------|
@@ -157,7 +149,7 @@ bcdedit /set testsigning on
 
 ---
 
-## 🧪 测试
+## 测试
 
 ```bash
 # 运行所有测试
@@ -175,9 +167,9 @@ cargo test security_tests
 
 ---
 
-## 🔗 OpenClaw 集成
+## OpenClaw 集成
 
-AI Guardian 已与 OpenClaw 集成！
+AI Guardian 已与 OpenClaw 集成，
 
 查看 `e:\debot\openclaw-main\AI-GUARDIAN-INTEGRATION.md` 了解详情。
 
@@ -193,7 +185,7 @@ npm run dev
 
 ---
 
-## 🛡️ 安全防护能力
+## 安全防护能力
 
 AI Guardian 可以防护以下攻击场景：
 
@@ -208,11 +200,11 @@ AI Guardian 可以防护以下攻击场景：
 
 ---
 
-## 🤝 贡献
+## 贡献
 
 <<<<<<< HEAD
-我们欢迎所有形式的贡献！查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何参与。
-### 🎯 当前优先任务
+我们欢迎所有形式的贡献，我估计不太能有人贡献，如果您真要贡献，请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何参与。
+### 当前优先任务
 
 1. **解决 AutoClaw Skill 加载问题** - 让 Guardian 能真正拦截命令
 2. **系统级拦截实现** - Windows API Hooking / Linux LD_PRELOAD
@@ -222,7 +214,7 @@ AI Guardian 可以防护以下攻击场景：
 
 ## 许可证
 
-[MIT License](LICENSE) - 让全世界人民都能用上 AI 安全防护！
+[MIT License](LICENSE) 
 =======
 欢迎贡献！请查看 [NEXT_STEPS.md](NEXT_STEPS.md) 了解当前任务。
 
@@ -242,19 +234,22 @@ AI Guardian 可以防护以下攻击场景：
 
 ---
 
-## 📄 许可证
+## 许可证
 
 MIT License - 查看 [LICENSE](LICENSE) 文件
 
 ---
 
-## 🙏 致谢
+##  致谢
 
 - OpenClaw - 启发本项目
 - eBPF - Linux 内核监控技术
 - Windows Driver Kit - Windows 驱动开发
 
 ---
+
+## 后记
+- 我策啊大厂速度就是快，我刚搞出来demo他就有成品了，白扯蛋玩意。真是好的设计总会心有灵犀啊。
 
 <p align="center">
   <strong>项目状态</strong>: 核心代码已完成 | 等待构建和测试
