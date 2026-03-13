@@ -391,10 +391,10 @@ jobs:
         fi
       continue-on-error: true
 
-  # 发布 Release
+  ## 发布 Release
   release:
     name: Create Release
-    needs: [rust-build-amd64, rust-build-arm64, linux-ebpf, electron-build]
+    needs: [rust-build-amd64, rust-build-arm64, rust-build-windows, linux-ebpf, electron-build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
@@ -509,6 +509,69 @@ jobs:
         name: debian-packages
         path: ai-guardian-*.deb
 
+    - name: Create Windows Package
+      run: |
+        mkdir -p windows-package
+        
+        # 复制 Windows exe 文件
+        if [ -f artifacts/rust-binary-windows/ai-guardian.exe ]; then
+          cp artifacts/rust-binary-windows/ai-guardian.exe windows-package/
+          echo "✅ Windows exe found and copied"
+        else
+          echo "❌ Windows exe not found, creating placeholder"
+          echo "Windows build may have failed" > windows-package/BUILD_FAILED.txt
+        fi
+        
+        # 创建 Windows 安装脚本
+        cat > windows-package/install-driver.ps1 << 'EOF'
+        # AI Guardian Driver Installer
+        # Run as Administrator
+        
+        Write-Host "Installing AI Guardian Driver..."
+        
+        # Check if running as admin
+        if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+            Write-Error "Please run as Administrator"
+            exit 1
+        }
+        
+        # Enable test mode for unsigned driver
+        Write-Host "Enabling Windows test mode for unsigned driver..."
+        bcdedit /set testsigning on
+        
+        Write-Host "Driver installation complete. Please reboot and run ai-guardian.exe"
+        EOF
+        
+        # 创建 README
+        cat > windows-package/README.txt << 'EOF'
+        AI Guardian V2 - Windows Version
+        ================================
+        
+        Requirements:
+        - Windows 10/11 x64
+        - Administrator privileges
+        - Test mode enabled (for unsigned driver)
+        
+        Installation:
+        1. Run install-driver.ps1 as Administrator
+        2. Reboot computer
+        3. Run ai-guardian.exe
+        
+        Note: The driver is currently unsigned. You need to enable
+        Windows test mode or sign the driver with a valid certificate.
+        EOF
+        
+        # 打包 Windows 版本
+        cd windows-package
+        zip -r ../ai-guardian-${{ steps.version.outputs.version }}-windows.zip .
+        cd ..
+
+    - name: Upload Windows Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-package
+        path: ai-guardian-*-windows.zip
+
     - name: Create GitHub Release
       run: |
         gh release create ${{ steps.version.outputs.version }} \
@@ -554,6 +617,7 @@ jobs:
         - 首次运行请查看配置文档" \
           --prerelease \
           ai-guardian-release.tar.gz \
-          ai-guardian-*.deb || true
+          ai-guardian-*.deb \
+          ai-guardian-*-windows.zip || true
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
