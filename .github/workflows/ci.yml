@@ -343,7 +343,7 @@ jobs:
       id: version
       run: |
         SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-        VERSION="v$(date +%Y%m%d)-${{ github.run_number }}-${SHORT_SHA}"
+        VERSION="$(date +%Y%m%d)-${{ github.run_number }}-${SHORT_SHA}"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Generated version: $VERSION"
 
