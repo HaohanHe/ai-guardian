@@ -74,15 +74,14 @@ jobs:
       continue-on-error: true
 
   # Rust 核心构建和测试
-  rust-build:
-    name: Rust Build & Test
+  rust-build-amd64:
+    name: Rust Build (amd64)
     needs: code-quality
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable]
 
     steps:
@@ -96,7 +95,6 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update || true
         sudo apt-get install -y libelf-dev libbpf-dev linux-headers-generic
@@ -114,29 +112,64 @@ jobs:
     - name: Upload Rust artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: rust-binary-${{ matrix.os }}
-        path: |
-          target/release/ai-guardian
-          target/release/ai-guardian.exe
-        if-no-files-found: warn
+        name: rust-binary-amd64
+        path: target/release/ai-guardian
 
-    - name: Check Windows binary exists
-      if: matrix.os == 'windows-latest'
-      shell: powershell
+  rust-build-arm64:
+    name: Rust Build (arm64)
+    needs: code-quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-unknown-linux-gnu
+
+    - name: Install cross compilation toolchain
       run: |
-        if (Test-Path target/release/ai-guardian.exe) {
-          Write-Host "✅ Windows binary found"
-          Get-Item target/release/ai-guardian.exe
-        } else {
-          Write-Host "❌ Windows binary NOT found"
-          exit 1
-        }
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+    - name: Configure cross compilation
+      run: |
+        mkdir -p ~/.cargo
+        cat >> ~/.cargo/config.toml << 'EOF'
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+EOF
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update || true
+        sudo apt-get install -y libelf-dev libbpf-dev linux-headers-generic
+      continue-on-error: false
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build Rust core
+      run: cargo build --release --target aarch64-unknown-linux-gnu --verbose
+
+    - name: Upload Rust artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rust-binary-arm64
+        path: target/aarch64-unknown-linux-gnu/release/ai-guardian
 
   # Windows 驱动构建（仅在手动触发时运行）
   windows-driver:
     name: Windows Driver Build
     runs-on: windows-latest
-    needs: rust-build
+    needs: rust-build-amd64
     permissions:
       contents: read
     if: github.event_name == 'workflow_dispatch'
@@ -176,7 +209,7 @@ jobs:
   linux-ebpf:
     name: Linux eBPF Build
     runs-on: ubuntu-latest
-    needs: rust-build
+    needs: rust-build-amd64
     permissions:
       contents: read
 
@@ -329,7 +362,7 @@ jobs:
   # 发布 Release
   release:
     name: Create Release
-    needs: [rust-build, linux-ebpf, electron-build]
+    needs: [rust-build-amd64, rust-build-arm64, linux-ebpf, electron-build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
@@ -358,18 +391,18 @@ jobs:
         cp -r artifacts/* release/ || true
         tar -czf ai-guardian-release.tar.gz release/
 
-    - name: Build Debian Package
+    - name: Build Debian Package (amd64)
       run: |
         # 创建 deb 包目录结构
         mkdir -p debian/ai-guardian/DEBIAN
         mkdir -p debian/ai-guardian/usr/bin
         mkdir -p debian/ai-guardian/etc/ai-guardian
         mkdir -p debian/ai-guardian/lib/systemd/system
-        
-        # 复制二进制文件
-        cp artifacts/rust-binary-ubuntu-latest/ai-guardian debian/ai-guardian/usr/bin/ || true
+
+        # 复制 amd64 二进制文件
+        cp artifacts/rust-binary-amd64/ai-guardian debian/ai-guardian/usr/bin/ai-guardian || true
         chmod +x debian/ai-guardian/usr/bin/ai-guardian || true
-        
+
         # 创建控制文件
         echo "Package: ai-guardian" > debian/ai-guardian/DEBIAN/control
         echo "Version: ${{ steps.version.outputs.version }}" >> debian/ai-guardian/DEBIAN/control
@@ -380,7 +413,7 @@ jobs:
         echo "Maintainer: AI Guardian Team <team@ai-guardian.dev>" >> debian/ai-guardian/DEBIAN/control
         echo "Description: AI Guardian - System-Level EDR for AI Agents" >> debian/ai-guardian/DEBIAN/control
         echo " AI Guardian is a system-level EDR for protecting AI Agents." >> debian/ai-guardian/DEBIAN/control
-        
+
         # 创建 postinst 脚本
         echo '#!/bin/bash' > debian/ai-guardian/DEBIAN/postinst
         echo 'set -e' >> debian/ai-guardian/DEBIAN/postinst
@@ -393,15 +426,55 @@ jobs:
         echo '' >> debian/ai-guardian/DEBIAN/postinst
         echo 'echo "AI Guardian installed successfully!"' >> debian/ai-guardian/DEBIAN/postinst
         chmod 755 debian/ai-guardian/DEBIAN/postinst
-        
+
         # 构建 deb 包
         dpkg-deb --build debian/ai-guardian
         mv debian/ai-guardian.deb ai-guardian-${{ steps.version.outputs.version }}-amd64.deb
-        
-    - name: Upload Debian Package
+
+    - name: Build Debian Package (arm64)
+      run: |
+        # 创建 deb 包目录结构
+        mkdir -p debian/ai-guardian-arm64/DEBIAN
+        mkdir -p debian/ai-guardian-arm64/usr/bin
+        mkdir -p debian/ai-guardian-arm64/etc/ai-guardian
+        mkdir -p debian/ai-guardian-arm64/lib/systemd/system
+
+        # 复制 arm64 二进制文件
+        cp artifacts/rust-binary-arm64/ai-guardian debian/ai-guardian-arm64/usr/bin/ai-guardian || true
+        chmod +x debian/ai-guardian-arm64/usr/bin/ai-guardian || true
+
+        # 创建控制文件
+        echo "Package: ai-guardian" > debian/ai-guardian-arm64/DEBIAN/control
+        echo "Version: ${{ steps.version.outputs.version }}" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo "Section: utils" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo "Priority: optional" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo "Architecture: arm64" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo "Depends: libelf1, libbpf0" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo "Maintainer: AI Guardian Team <team@ai-guardian.dev>" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo "Description: AI Guardian - System-Level EDR for AI Agents" >> debian/ai-guardian-arm64/DEBIAN/control
+        echo " AI Guardian is a system-level EDR for protecting AI Agents." >> debian/ai-guardian-arm64/DEBIAN/control
+
+        # 创建 postinst 脚本
+        echo '#!/bin/bash' > debian/ai-guardian-arm64/DEBIAN/postinst
+        echo 'set -e' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo '' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo 'if ! id -u ai-guardian > /dev/null 2>&1; then' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo '    useradd -r -s /bin/false ai-guardian' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo 'fi' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo '' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo 'chown -R ai-guardian:ai-guardian /etc/ai-guardian' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo '' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        echo 'echo "AI Guardian installed successfully!"' >> debian/ai-guardian-arm64/DEBIAN/postinst
+        chmod 755 debian/ai-guardian-arm64/DEBIAN/postinst
+
+        # 构建 deb 包
+        dpkg-deb --build debian/ai-guardian-arm64
+        mv debian/ai-guardian-arm64.deb ai-guardian-${{ steps.version.outputs.version }}-arm64.deb
+
+    - name: Upload Debian Packages
       uses: actions/upload-artifact@v4
       with:
-        name: debian-package
+        name: debian-packages
         path: ai-guardian-*.deb
 
     - name: Create GitHub Release
