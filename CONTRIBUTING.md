@@ -5,7 +5,7 @@
 ## 快速开始
 
 1. Fork 本仓库
-2. Clone 您的 fork: `git clone https://github.com/YOUR_USERNAME/ai-guardian.git`
+2. Clone 您的 fork: `https://github.com/HaohanHe/ai-guardian.git`
 3. 创建分支: `git checkout -b feature/your-feature-name`
 4. 提交更改: `git commit -m "Add some feature"`
 5. Push 到 fork: `git push origin feature/your-feature-name`
