@@ -1,825 +1,423 @@
-import React, { useState, useEffect } from 'react';
-import toast from 'react-hot-toast';
-import {
+import React, { useState } from 'react';
+import { 
+  CogIcon, 
   ShieldCheckIcon,
-  CpuChipIcon,
   BellIcon,
-  DocumentTextIcon,
-  GlobeAltIcon,
-  CogIcon,
-  CheckCircleIcon,
-  ExclamationCircleIcon,
   ArrowPathIcon,
-} from '@heroicons/react/24/outline';
-
-declare global {
-  interface Window {
-    electronAPI: {
-      getConfig: () => Promise<any>;
-      updateConfig: (config: any) => Promise<any>;
-      resetConfig: () => Promise<any>;
-      validateConfig: (config: any) => Promise<any>;
-      getDriverStatus: () => Promise<any>;
-      installDriver: () => Promise<any>;
-      uninstallDriver: () => Promise<any>;
-      getLLMProviders: () => Promise<any[]>;
-      testLLMConnection: (provider: string) => Promise<any>;
-      enableAutoStart: () => Promise<void>;
-      disableAutoStart: () => Promise<void>;
-      isAutoStartEnabled: () => Promise<{ enabled: boolean }>;
-    };
-  }
-}
-
-interface Config {
-  general: {
-    auto_start: boolean;
-    minimize_to_tray: boolean;
-    check_updates: boolean;
-    language: string;
-    theme: string;
-  };
-  security: {
-    block_file_delete: boolean;
-    block_system_path_write: boolean;
-    block_network_connection: boolean;
-    block_registry_modify: boolean;
-    block_process_create: boolean;
-    risk_threshold: number;
-    auto_block: boolean;
-    whitelist_mode: boolean;
-  };
-  ai: {
-    enabled_terminals: string[];
-    auto_detect: boolean;
-    scan_interval: number;
-  };
-  llm: {
-    provider: string;
-    model: string;
-    api_key?: string;
-    base_url?: string;
-    timeout: number;
-    max_retries: number;
-  };
-  logging: {
-    level: string;
-    max_file_size: number;
-    max_files: number;
-    log_path: string;
-  };
-  notification: {
-    enabled: boolean;
-    sound: boolean;
-    desktop: boolean;
-    email?: string;
-  };
-}
-
-interface LLMProvider {
-  id: string;
-  name: string;
-  models: string[];
-  configured: boolean;
-  healthy?: boolean;
-}
-
-interface DriverStatus {
-  installed: boolean;
-  loaded: boolean;
-  version?: string;
-  signing_status: string;
-  test_mode_enabled: boolean;
-  error?: string;
-}
+  UserIcon,
+  GlobeAltIcon,
+  ComputerDesktopIcon,
+  CheckCircleIcon,
+  InformationCircleIcon
+} from '@heroicons/react/24/solid';
+import toast from 'react-hot-toast';
 
 const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('general');
-  const [config, setConfig] = useState<Config | null>(null);
-  const [originalConfig, setOriginalConfig] = useState<Config | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [llmProviders, setLLMProviders] = useState<LLMProvider[]>([]);
-  const [driverStatus, setDriverStatus] = useState<DriverStatus | null>(null);
-  const [testingLLM, setTestingLLM] = useState<string | null>(null);
-  const [installingDriver, setInstallingDriver] = useState(false);
-  const [autoStartEnabled, setAutoStartEnabled] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-
-  useEffect(() => {
-    loadConfig();
-    loadLLMProviders();
-    loadDriverStatus();
-    loadAutoStartStatus();
-  }, []);
-
-  useEffect(() => {
-    if (config && originalConfig) {
-      setHasChanges(JSON.stringify(config) !== JSON.stringify(originalConfig));
+  const [activeSection, setActiveSection] = useState('general');
+  
+  const [settings, setSettings] = useState({
+    autoStart: true,
+    autoUpdate: true,
+    realTimeProtection: true,
+    cloudAnalysis: true,
+    suspiciousFileAlert: true,
+    autoQuarantine: true,
+    notifications: {
+      threatFound: true,
+      scanComplete: true,
+      updateAvailable: true,
+      weeklyReport: false,
+    },
+    scan: {
+      scanArchives: true,
+      scanEmail: false,
+      heuristicsLevel: 'medium',
+      cpuUsage: 'balanced',
+    },
+    ui: {
+      theme: 'dark',
+      language: 'zh-CN',
+      minimizeToTray: true,
+      showNotifications: true,
     }
-  }, [config, originalConfig]);
+  });
 
-  const loadConfig = async () => {
-    try {
-      const cfg = await window.electronAPI.getConfig();
-      setConfig(cfg);
-      setOriginalConfig(JSON.parse(JSON.stringify(cfg)));
-      setLoading(false);
-    } catch (error) {
-      console.error('Failed to load config:', error);
-      toast.error('加载配置失败');
-      setLoading(false);
-    }
-  };
-
-  const loadLLMProviders = async () => {
-    try {
-      const providers = await window.electronAPI.getLLMProviders();
-      setLLMProviders(providers || []);
-    } catch (error) {
-      console.error('Failed to load LLM providers:', error);
-    }
-  };
-
-  const loadDriverStatus = async () => {
-    try {
-      const status = await window.electronAPI.getDriverStatus();
-      setDriverStatus(status);
-    } catch (error) {
-      console.error('Failed to load driver status:', error);
-    }
-  };
-
-  const loadAutoStartStatus = async () => {
-    try {
-      const { enabled } = await window.electronAPI.isAutoStartEnabled();
-      setAutoStartEnabled(enabled);
-    } catch (error) {
-      console.error('Failed to load auto start status:', error);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!config) return;
-
-    setSaving(true);
-    try {
-      const validation = await window.electronAPI.validateConfig(config);
-      if (!validation.valid) {
-        validation.errors.forEach((err: any) => {
-          toast.error(`${err.field}: ${err.message}`);
-        });
-        setSaving(false);
-        return;
+  const toggleSetting = (path: string) => {
+    setSettings(prev => {
+      const keys = path.split('.');
+      let current: any = prev;
+      for (let i = 0; i < keys.length - 1; i++) {
+        current = current[keys[i]];
       }
-
-      await window.electronAPI.updateConfig(config);
-      setOriginalConfig(JSON.parse(JSON.stringify(config)));
-      setHasChanges(false);
-      toast.success('配置已保存');
-    } catch (error) {
-      console.error('Failed to save config:', error);
-      toast.error('保存配置失败');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleReset = async () => {
-    if (!confirm('确定要重置所有设置吗？此操作不可撤销。')) return;
-
-    try {
-      const defaultConfig = await window.electronAPI.resetConfig();
-      setConfig(defaultConfig);
-      setOriginalConfig(JSON.parse(JSON.stringify(defaultConfig)));
-      setHasChanges(false);
-      toast.success('配置已重置');
-    } catch (error) {
-      console.error('Failed to reset config:', error);
-      toast.error('重置配置失败');
-    }
-  };
-
-  const handleTestLLM = async (providerId: string) => {
-    setTestingLLM(providerId);
-    try {
-      await window.electronAPI.testLLMConnection(providerId);
-      toast.success('LLM 连接测试成功');
-      loadLLMProviders();
-    } catch (error) {
-      console.error('LLM test failed:', error);
-      toast.error('LLM 连接测试失败');
-    } finally {
-      setTestingLLM(null);
-    }
-  };
-
-  const handleInstallDriver = async () => {
-    if (!confirm('安装驱动需要管理员权限，确定要继续吗？')) return;
-
-    setInstallingDriver(true);
-    try {
-      const result = await window.electronAPI.installDriver();
-      toast.success('驱动安装成功');
-      if (result.requiresReboot) {
-        toast('需要重启系统才能生效', { icon: 'ℹ️', duration: 10000 });
-      }
-      loadDriverStatus();
-    } catch (error) {
-      console.error('Driver install failed:', error);
-      toast.error('驱动安装失败');
-    } finally {
-      setInstallingDriver(false);
-    }
-  };
-
-  const handleUninstallDriver = async () => {
-    if (!confirm('确定要卸载驱动吗？这将停止所有防护功能。')) return;
-
-    setInstallingDriver(true);
-    try {
-      await window.electronAPI.uninstallDriver();
-      toast.success('驱动已卸载');
-      loadDriverStatus();
-    } catch (error) {
-      console.error('Driver uninstall failed:', error);
-      toast.error('驱动卸载失败');
-    } finally {
-      setInstallingDriver(false);
-    }
-  };
-
-  const handleAutoStartToggle = async () => {
-    try {
-      if (autoStartEnabled) {
-        await window.electronAPI.disableAutoStart();
-        setAutoStartEnabled(false);
-        toast.success('已关闭开机自启');
-      } else {
-        await window.electronAPI.enableAutoStart();
-        setAutoStartEnabled(true);
-        toast.success('已开启开机自启');
-      }
-    } catch (error) {
-      console.error('Failed to toggle auto start:', error);
-      toast.error('设置开机自启失败');
-    }
-  };
-
-  const updateConfigSection = <K extends keyof Config>(section: K, updates: Partial<Config[K]>) => {
-    if (!config) return;
-    setConfig({
-      ...config,
-      [section]: { ...config[section], ...updates },
+      current[keys[keys.length - 1]] = !current[keys[keys.length - 1]];
+      return { ...prev };
     });
+    toast.success('设置已保存', { icon: '✅' });
   };
 
-  const tabs = [
-    { id: 'general', name: '通用', icon: CogIcon },
-    { id: 'security', name: '安全策略', icon: ShieldCheckIcon },
-    { id: 'ai', name: 'AI 分析', icon: CpuChipIcon },
-    { id: 'llm', name: 'LLM 配置', icon: CpuChipIcon },
-    { id: 'driver', name: '驱动管理', icon: ShieldCheckIcon },
-    { id: 'audit', name: '审计日志', icon: DocumentTextIcon },
-    { id: 'alerts', name: '告警', icon: BellIcon },
+  const sections = [
+    { id: 'general', name: '常规设置', icon: CogIcon },
+    { id: 'protection', name: '防护设置', icon: ShieldCheckIcon },
+    { id: 'scan', name: '扫描设置', icon: ArrowPathIcon },
+    { id: 'notifications', name: '通知设置', icon: BellIcon },
+    { id: 'ui', name: '界面设置', icon: ComputerDesktopIcon },
+    { id: 'about', name: '关于', icon: InformationCircleIcon },
   ];
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <ArrowPathIcon className="w-8 h-8 text-blue-500 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!config) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <ExclamationCircleIcon className="w-12 h-12 text-red-500" />
-        <p className="ml-4 text-gray-400">加载配置失败</p>
-      </div>
-    );
-  }
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'general':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">通用设置</h2>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">开机自启</h3>
-                  <p className="text-sm text-gray-400">系统启动时自动运行 AI Guardian</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoStartEnabled}
-                    onChange={handleAutoStartToggle}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">最小化到托盘</h3>
-                  <p className="text-sm text-gray-400">关闭窗口时最小化到系统托盘</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.general.minimize_to_tray}
-                    onChange={(e) => updateConfigSection('general', { minimize_to_tray: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">自动检查更新</h3>
-                  <p className="text-sm text-gray-400">定期检查新版本</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.general.check_updates}
-                    onChange={(e) => updateConfigSection('general', { check_updates: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">语言</h3>
-                <select
-                  value={config.general.language}
-                  onChange={(e) => updateConfigSection('general', { language: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                >
-                  <option value="zh-CN">简体中文</option>
-                  <option value="en-US">English</option>
-                </select>
-              </div>
-
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">主题</h3>
-                <select
-                  value={config.general.theme}
-                  onChange={(e) => updateConfigSection('general', { theme: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                >
-                  <option value="dark">深色</option>
-                  <option value="light">浅色</option>
-                  <option value="system">跟随系统</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'security':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">安全策略</h2>
-            
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">风险阈值: {config.security.risk_threshold}</h3>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={config.security.risk_threshold}
-                  onChange={(e) => updateConfigSection('security', { risk_threshold: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-sm text-gray-400 mt-1">
-                  <span>宽松</span>
-                  <span>严格</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">自动阻断高风险操作</h3>
-                  <p className="text-sm text-gray-400">超过阈值时自动阻断</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.security.auto_block}
-                    onChange={(e) => updateConfigSection('security', { auto_block: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="font-medium">阻断策略</h3>
-                
-                {[
-                  { key: 'block_file_delete', label: '阻断文件删除操作', desc: '防止 AI 删除重要文件' },
-                  { key: 'block_system_path_write', label: '阻断系统路径写入', desc: '保护系统关键目录' },
-                  { key: 'block_network_connection', label: '阻断可疑网络连接', desc: '防止数据外泄' },
-                  { key: 'block_registry_modify', label: '阻断注册表修改', desc: '保护系统配置' },
-                  { key: 'block_process_create', label: '阻断进程创建', desc: '防止执行危险程序' },
-                ].map((item) => (
-                  <label key={item.key} className="flex items-start p-3 bg-gray-700/30 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={config.security[item.key as keyof typeof config.security] as boolean}
-                      onChange={(e) => updateConfigSection('security', { [item.key]: e.target.checked })}
-                      className="mt-1 mr-3 w-4 h-4"
-                    />
-                    <div>
-                      <div className="font-medium">{item.label}</div>
-                      <div className="text-sm text-gray-400">{item.desc}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'llm':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">LLM 配置</h2>
-            
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">选择 LLM 供应商</h3>
-                <div className="space-y-2">
-                  {llmProviders.map((provider) => (
-                    <div
-                      key={provider.id}
-                      className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${
-                        config.llm.provider === provider.id
-                          ? 'border-blue-500 bg-blue-500/10'
-                          : 'border-gray-600 hover:border-gray-500'
-                      }`}
-                      onClick={() => updateConfigSection('llm', { 
-                        provider: provider.id,
-                        model: provider.models[0] || ''
-                      })}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium">{provider.name}</span>
-                            {provider.configured && (
-                              <CheckCircleIcon className="w-4 h-4 text-green-500" />
-                            )}
-                          </div>
-                          <div className="text-sm text-gray-400 mt-1">
-                            模型: {provider.models.join(', ')}
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTestLLM(provider.id);
-                          }}
-                          disabled={testingLLM === provider.id}
-                          className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                          {testingLLM === provider.id ? '测试中...' : '测试连接'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">API Key</h3>
-                <input
-                  type="password"
-                  value={config.llm.api_key || ''}
-                  onChange={(e) => updateConfigSection('llm', { api_key: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                  placeholder="输入 API Key"
-                />
-              </div>
-
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">Base URL (可选)</h3>
-                <input
-                  type="text"
-                  value={config.llm.base_url || ''}
-                  onChange={(e) => updateConfigSection('llm', { base_url: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                  placeholder="自定义 API 端点"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-gray-700/30 rounded-lg">
-                  <h3 className="font-medium mb-2">超时时间 (ms)</h3>
-                  <input
-                    type="number"
-                    value={config.llm.timeout}
-                    onChange={(e) => updateConfigSection('llm', { timeout: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                    min={1000}
-                    max={120000}
-                  />
-                </div>
-
-                <div className="p-4 bg-gray-700/30 rounded-lg">
-                  <h3 className="font-medium mb-2">最大重试次数</h3>
-                  <input
-                    type="number"
-                    value={config.llm.max_retries}
-                    onChange={(e) => updateConfigSection('llm', { max_retries: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                    min={0}
-                    max={10}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'driver':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">驱动管理</h2>
-            
-            <div className="p-4 bg-gray-700/30 rounded-lg">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-medium">驱动状态</h3>
-                {driverStatus?.loaded && (
-                  <span className="px-2 py-1 text-xs rounded-full bg-green-500/20 text-green-500">
-                    运行中
-                  </span>
-                )}
-              </div>
-              
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">已安装:</span>
-                  <span>{driverStatus?.installed ? '是' : '否'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">已加载:</span>
-                  <span>{driverStatus?.loaded ? '是' : '否'}</span>
-                </div>
-                {driverStatus?.version && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">版本:</span>
-                    <span>{driverStatus.version}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-400">签名状态:</span>
-                  <span>{driverStatus?.signing_status}</span>
-                </div>
-                {driverStatus?.error && (
-                  <div className="mt-2 p-2 bg-red-500/20 rounded text-red-500">
-                    {driverStatus.error}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex space-x-4">
-              <button
-                onClick={handleInstallDriver}
-                disabled={installingDriver || driverStatus?.loaded}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {installingDriver ? '安装中...' : driverStatus?.loaded ? '已安装' : '安装驱动'}
-              </button>
-              <button
-                onClick={handleUninstallDriver}
-                disabled={installingDriver || !driverStatus?.installed}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                卸载驱动
-              </button>
-            </div>
-
-            <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <h4 className="font-medium text-yellow-500 mb-2">注意事项</h4>
-              <ul className="text-sm text-gray-400 space-y-1">
-                <li>• 安装驱动需要管理员权限</li>
-                <li>• 测试签名的驱动需要启用测试模式</li>
-                <li>• 某些情况下可能需要重启系统</li>
-                <li>• 卸载驱动将停止所有防护功能</li>
-              </ul>
-            </div>
-          </div>
-        );
-
-      case 'audit':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">审计日志设置</h2>
-            
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">日志级别</h3>
-                <select
-                  value={config.logging.level}
-                  onChange={(e) => updateConfigSection('logging', { level: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                >
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warn">Warning</option>
-                  <option value="error">Error</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-gray-700/30 rounded-lg">
-                  <h3 className="font-medium mb-2">最大文件大小 (MB)</h3>
-                  <input
-                    type="number"
-                    value={config.logging.max_file_size / (1024 * 1024)}
-                    onChange={(e) => updateConfigSection('logging', { 
-                      max_file_size: parseInt(e.target.value) * 1024 * 1024 
-                    })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                    min={10}
-                    max={1000}
-                  />
-                </div>
-
-                <div className="p-4 bg-gray-700/30 rounded-lg">
-                  <h3 className="font-medium mb-2">最大文件数</h3>
-                  <input
-                    type="number"
-                    value={config.logging.max_files}
-                    onChange={(e) => updateConfigSection('logging', { max_files: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                    min={1}
-                    max={100}
-                  />
-                </div>
-              </div>
-
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">日志路径</h3>
-                <input
-                  type="text"
-                  value={config.logging.log_path}
-                  onChange={(e) => updateConfigSection('logging', { log_path: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                />
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'alerts':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold">告警设置</h2>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">启用通知</h3>
-                  <p className="text-sm text-gray-400">接收安全事件通知</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.notification.enabled}
-                    onChange={(e) => updateConfigSection('notification', { enabled: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">声音提醒</h3>
-                  <p className="text-sm text-gray-400">播放提示音</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.notification.sound}
-                    onChange={(e) => updateConfigSection('notification', { sound: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
-                <div>
-                  <h3 className="font-medium">桌面通知</h3>
-                  <p className="text-sm text-gray-400">显示系统桌面通知</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.notification.desktop}
-                    onChange={(e) => updateConfigSection('notification', { desktop: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              <div className="p-4 bg-gray-700/30 rounded-lg">
-                <h3 className="font-medium mb-2">邮件通知 (可选)</h3>
-                <input
-                  type="email"
-                  value={config.notification.email || ''}
-                  onChange={(e) => updateConfigSection('notification', { email: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
-                  placeholder="输入邮箱地址"
-                />
-              </div>
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
-
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">设置</h1>
-        {hasChanges && (
-          <span className="text-sm text-yellow-500">有未保存的更改</span>
+    <div className="flex gap-6 h-full">
+      {/* Sidebar */}
+      <div className="w-64 flex-shrink-0">
+        <div className="space-y-1">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            return (
+              <button
+                key={section.id}
+                onClick={() => setActiveSection(section.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+                  activeSection === section.id
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                    : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                {section.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto space-y-6 pb-6">
+        {activeSection === 'general' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">常规设置</h2>
+              <p className="text-slate-400">配置基本运行选项</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 divide-y divide-slate-700/50">
+              <SettingItem
+                title="开机自启动"
+                description="系统启动时自动运行 AI Guardian"
+                enabled={settings.autoStart}
+                onToggle={() => toggleSetting('autoStart')}
+              />
+              <SettingItem
+                title="自动更新"
+                description="自动检测并安装病毒库和程序更新"
+                enabled={settings.autoUpdate}
+                onToggle={() => toggleSetting('autoUpdate')}
+              />
+              <SettingItem
+                title="云端分析"
+                description="将可疑文件上传到云端进行分析"
+                enabled={settings.cloudAnalysis}
+                onToggle={() => toggleSetting('cloudAnalysis')}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'protection' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">防护设置</h2>
+              <p className="text-slate-400">配置实时防护选项</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 divide-y divide-slate-700/50">
+              <SettingItem
+                title="实时防护"
+                description="实时监控文件系统和进程活动"
+                enabled={settings.realTimeProtection}
+                onToggle={() => toggleSetting('realTimeProtection')}
+              />
+              <SettingItem
+                title="可疑文件提醒"
+                description="检测到可疑文件时立即通知"
+                enabled={settings.suspiciousFileAlert}
+                onToggle={() => toggleSetting('suspiciousFileAlert')}
+              />
+              <SettingItem
+                title="自动隔离"
+                description="自动隔离检测到的威胁文件"
+                enabled={settings.autoQuarantine}
+                onToggle={() => toggleSetting('autoQuarantine')}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'scan' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">扫描设置</h2>
+              <p className="text-slate-400">配置病毒扫描选项</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 divide-y divide-slate-700/50">
+              <SettingItem
+                title="扫描压缩包"
+                description="扫描 ZIP、RAR 等压缩文件内容"
+                enabled={settings.scan.scanArchives}
+                onToggle={() => toggleSetting('scan.scanArchives')}
+              />
+              <SettingItem
+                title="扫描邮件"
+                description="扫描电子邮件客户端的邮件和附件"
+                enabled={settings.scan.scanEmail}
+                onToggle={() => toggleSetting('scan.scanEmail')}
+              />
+              
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">启发式级别</h3>
+                    <p className="text-sm text-slate-400">调整未知威胁检测的敏感度</p>
+                  </div>
+                  <select
+                    value={settings.scan.heuristicsLevel}
+                    onChange={(e) => {
+                      setSettings(prev => ({
+                        ...prev,
+                        scan: { ...prev.scan, heuristicsLevel: e.target.value }
+                      }));
+                      toast.success('设置已保存', { icon: '✅' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-700/50 border border-slate-600/50 text-white focus:outline-none focus:border-blue-500/50"
+                  >
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">CPU 使用限制</h3>
+                    <p className="text-sm text-slate-400">控制扫描时的资源占用</p>
+                  </div>
+                  <select
+                    value={settings.scan.cpuUsage}
+                    onChange={(e) => {
+                      setSettings(prev => ({
+                        ...prev,
+                        scan: { ...prev.scan, cpuUsage: e.target.value }
+                      }));
+                      toast.success('设置已保存', { icon: '✅' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-700/50 border border-slate-600/50 text-white focus:outline-none focus:border-blue-500/50"
+                  >
+                    <option value="low">低</option>
+                    <option value="balanced">平衡</option>
+                    <option value="high">高</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'notifications' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">通知设置</h2>
+              <p className="text-slate-400">配置系统通知选项</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 divide-y divide-slate-700/50">
+              <SettingItem
+                title="威胁发现通知"
+                description="检测到威胁时显示通知"
+                enabled={settings.notifications.threatFound}
+                onToggle={() => toggleSetting('notifications.threatFound')}
+              />
+              <SettingItem
+                title="扫描完成通知"
+                description="扫描完成后显示通知"
+                enabled={settings.notifications.scanComplete}
+                onToggle={() => toggleSetting('notifications.scanComplete')}
+              />
+              <SettingItem
+                title="更新可用通知"
+                description="有新版本时显示通知"
+                enabled={settings.notifications.updateAvailable}
+                onToggle={() => toggleSetting('notifications.updateAvailable')}
+              />
+              <SettingItem
+                title="每周安全报告"
+                description="每周发送系统安全报告"
+                enabled={settings.notifications.weeklyReport}
+                onToggle={() => toggleSetting('notifications.weeklyReport')}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'ui' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">界面设置</h2>
+              <p className="text-slate-400">配置用户界面选项</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 divide-y divide-slate-700/50">
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">主题</h3>
+                    <p className="text-sm text-slate-400">选择界面主题</p>
+                  </div>
+                  <select
+                    value={settings.ui.theme}
+                    onChange={(e) => {
+                      setSettings(prev => ({
+                        ...prev,
+                        ui: { ...prev.ui, theme: e.target.value }
+                      }));
+                      toast.success('设置已保存', { icon: '✅' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-700/50 border border-slate-600/50 text-white focus:outline-none focus:border-blue-500/50"
+                  >
+                    <option value="dark">深色</option>
+                    <option value="light">浅色</option>
+                    <option value="system">跟随系统</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">语言</h3>
+                    <p className="text-sm text-slate-400">选择界面语言</p>
+                  </div>
+                  <select
+                    value={settings.ui.language}
+                    onChange={(e) => {
+                      setSettings(prev => ({
+                        ...prev,
+                        ui: { ...prev.ui, language: e.target.value }
+                      }));
+                      toast.success('设置已保存', { icon: '✅' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-700/50 border border-slate-600/50 text-white focus:outline-none focus:border-blue-500/50"
+                  >
+                    <option value="zh-CN">简体中文</option>
+                    <option value="en-US">English</option>
+                  </select>
+                </div>
+              </div>
+
+              <SettingItem
+                title="最小化到托盘"
+                description="关闭窗口时最小化到系统托盘"
+                enabled={settings.ui.minimizeToTray}
+                onToggle={() => toggleSetting('ui.minimizeToTray')}
+              />
+              <SettingItem
+                title="显示桌面通知"
+                description="在桌面显示弹出通知"
+                enabled={settings.ui.showNotifications}
+                onToggle={() => toggleSetting('ui.showNotifications')}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'about' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">关于</h2>
+              <p className="text-slate-400">AI Guardian 专业安全防护系统</p>
+            </div>
+
+            <div className="rounded-2xl bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 border border-slate-600/50 p-8 text-center">
+              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30">
+                <ShieldCheckIcon className="w-12 h-12 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold mb-2">AI Guardian</h3>
+              <p className="text-slate-400 mb-6">版本 2.0.0 (Build 20240115)</p>
+              
+              <div className="grid grid-cols-2 gap-4 text-left mb-6">
+                <div className="bg-slate-700/30 rounded-xl p-4">
+                  <p className="text-sm text-slate-400">病毒库版本</p>
+                  <p className="font-semibold">2024.01.15.01</p>
+                </div>
+                <div className="bg-slate-700/30 rounded-xl p-4">
+                  <p className="text-sm text-slate-400">引擎版本</p>
+                  <p className="font-semibold">3.5.2</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => toast.success('检查更新中...', { icon: '🔍' })}
+                  className="px-6 py-2.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 transition-colors"
+                >
+                  检查更新
+                </button>
+                <button
+                  onClick={() => toast('用户手册已打开', { icon: '📖' })}
+                  className="px-6 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 transition-colors"
+                >
+                  用户手册
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-800/50 border border-slate-700/50 p-6">
+              <h4 className="font-semibold mb-4">许可信息</h4>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
+                  <CheckCircleIcon className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="font-semibold">Pro 版本</p>
+                  <p className="text-sm text-slate-400">有效期至: 2025-01-15</p>
+                </div>
+              </div>
+              <button className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white font-semibold transition-colors">
+                升级授权
+              </button>
+            </div>
+          </div>
         )}
       </div>
+    </div>
+  );
+};
 
-      <div className="flex gap-8">
-        <div className="w-64 flex-shrink-0">
-          <nav className="space-y-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-left ${
-                    activeTab === tab.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-400 hover:bg-gray-800'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{tab.name}</span>
-                </button>
-              );
-            })}
-          </nav>
+const SettingItem: React.FC<{
+  title: string;
+  description: string;
+  enabled: boolean;
+  onToggle: () => void;
+}> = ({ title, description, enabled, onToggle }) => {
+  return (
+    <div className="p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <h3 className="font-semibold">{title}</h3>
+          <p className="text-sm text-slate-400">{description}</p>
         </div>
-
-        <div className="flex-1 bg-gray-800 rounded-xl p-6 border border-gray-700">
-          {renderContent()}
-
-          <div className="mt-8 pt-6 border-t border-gray-700 flex justify-between">
-            <button
-              onClick={handleReset}
-              className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-            >
-              重置为默认
-            </button>
-            <div className="flex space-x-4">
-              <button
-                onClick={() => {
-                  setConfig(JSON.parse(JSON.stringify(originalConfig)));
-                  setHasChanges(false);
-                }}
-                disabled={!hasChanges}
-                className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !hasChanges}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? '保存中...' : '保存设置'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={onToggle}
+          className={`relative w-16 h-8 rounded-full transition-colors ${
+            enabled ? 'bg-green-500' : 'bg-slate-600'
+          }`}
+        >
+          <div
+            className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
+              enabled ? 'translate-x-9' : 'translate-x-1'
+            }`}
+          />
+        </button>
       </div>
     </div>
   );
