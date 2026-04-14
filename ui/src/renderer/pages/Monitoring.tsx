@@ -1,216 +1,309 @@
-/**
- * AI Guardian - Monitoring Page
- *
- * 实时监控页面，展示 AI 终端进程和实时事件流
- */
-
-import React, { useEffect, useState } from 'react';
-import { 
-  CpuChipIcon, 
-  PlayIcon, 
-  StopIcon,
+import React, { useCallback, useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
+import {
+  CpuChipIcon,
+  ArrowPathIcon,
   ShieldCheckIcon,
   ExclamationTriangleIcon,
-  NoSymbolIcon
-} from '@heroicons/react/24/outline';
+  NoSymbolIcon,
+  GlobeAltIcon,
+  TrashIcon,
+} from '@heroicons/react/24/outline'
+import { useBackendStore } from '../store/backendStore'
 
-interface Process {
-  id: string;
-  pid: number;
-  name: string;
-  command: string;
-  status: 'running' | 'stopped';
-  riskScore: number;
-  eventsCount: number;
+declare global {
+  interface Window {
+    electronAPI?: {
+      getAITerminals?: () => Promise<any[]>
+      refreshAITerminals?: () => Promise<any>
+      getAuditLogs?: (params: any) => Promise<any[]>
+      getConfig?: () => Promise<any>
+      updateConfig?: (config: any) => Promise<any>
+      getDriverStatus?: () => Promise<any>
+    }
+  }
 }
 
 const Monitoring: React.FC = () => {
-  const [processes, setProcesses] = useState<Process[]>([
-    { id: '1', pid: 1234, name: 'node', command: 'node server.js', status: 'running', riskScore: 15, eventsCount: 45 },
-    { id: '2', pid: 5678, name: 'python', command: 'python app.py', status: 'running', riskScore: 25, eventsCount: 23 },
-    { id: '3', pid: 9012, name: 'bash', command: 'bash script.sh', status: 'running', riskScore: 85, eventsCount: 12 },
-  ]);
+  const connected = useBackendStore((s) => s.connected)
+  const [terminals, setTerminals] = useState<any[]>([])
+  const [recent, setRecent] = useState<any[]>([])
+  const [config, setConfig] = useState<any | null>(null)
+  const [driverStatus, setDriverStatus] = useState<any | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const [logs, setLogs] = useState<string[]>([
-    '[2024-01-15 10:30:45] INFO: Process 1234 (node) - File Open: /home/user/project/package.json',
-    '[2024-01-15 10:30:46] WARN: Process 5678 (python) - Network Connect: 192.168.1.100:8080',
-    '[2024-01-15 10:30:47] BLOCK: Process 9012 (bash) - Blocked: rm -rf /etc',
-    '[2024-01-15 10:30:48] INFO: Process 1234 (node) - File Read: /home/user/project/src/index.js',
-  ]);
+  const load = useCallback(async () => {
+    setLoading(true)
+    const [tRes, lRes, cRes, dRes] = await Promise.allSettled([
+      window.electronAPI?.getAITerminals?.(),
+      window.electronAPI?.getAuditLogs?.({ limit: 30 }),
+      window.electronAPI?.getConfig?.(),
+      window.electronAPI?.getDriverStatus?.(),
+    ])
 
-  // 模拟实时日志更新
+    if (tRes.status === 'fulfilled') setTerminals(tRes.value || [])
+    if (lRes.status === 'fulfilled') setRecent(lRes.value || [])
+    if (cRes.status === 'fulfilled') setConfig(cRes.value)
+    if (dRes.status === 'fulfilled') setDriverStatus(dRes.value)
+    setLoading(false)
+  }, [])
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const newLog = `[${new Date().toLocaleTimeString()}] INFO: System check - All modules operational`;
-      setLogs(prev => [newLog, ...prev].slice(0, 100));
-    }, 5000);
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
+  }, [load])
 
-    return () => clearInterval(interval);
-  }, []);
+  const togglePolicy = async (key: string, value: boolean) => {
+    if (!config) return
+    const updated = { ...config, security: { ...config.security, [key]: value } }
+    try {
+      await window.electronAPI?.updateConfig?.(updated)
+      setConfig(updated)
+      toast.success('策略已更新')
+    } catch {
+      toast.error('策略更新失败')
+    }
+  }
 
-  const getRiskColor = (score: number) => {
-    if (score >= 85) return 'text-red-500 bg-red-500/10';
-    if (score >= 60) return 'text-orange-500 bg-orange-500/10';
-    if (score >= 30) return 'text-yellow-500 bg-yellow-500/10';
-    return 'text-green-500 bg-green-500/10';
-  };
+  const getRiskBadge = (score: number) => {
+    if (score >= 85) return 'bg-red-50 text-red-700 border-red-200'
+    if (score >= 60) return 'bg-orange-50 text-orange-700 border-orange-200'
+    if (score >= 30) return 'bg-accent-50 text-accent-800 border-accent-200'
+    return 'bg-brand-50 text-brand-800 border-brand-200'
+  }
 
   return (
-    <div className="p-8 space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">实时监控</h1>
-        <p className="text-gray-400 mt-1">监控 AI 终端进程活动</p>
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-2xl font-bold text-slate-900">防护中心</div>
+          <div className="mt-1 text-sm text-slate-600">实时策略 + AI 终端追踪 + 事件快照</div>
+        </div>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await window.electronAPI?.refreshAITerminals?.()
+              await load()
+              toast.success('已刷新')
+            } catch {
+              toast.error('刷新失败')
+            }
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 font-semibold"
+        >
+          <ArrowPathIcon className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          刷新
+        </button>
       </div>
 
-      {/* AI Processes */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-        <div className="p-6 border-b border-gray-700 flex justify-between items-center">
-          <h2 className="text-lg font-semibold">AI 终端进程</h2>
-          <div className="flex space-x-2">
-            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition-colors">
-              添加进程
-            </button>
-            <button className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">
-              刷新
-            </button>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="card">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">引擎状态</div>
+            <span
+              className={[
+                'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border',
+                connected ? 'bg-brand-50 text-brand-800 border-brand-200' : 'bg-red-50 text-red-700 border-red-200',
+              ].join(' ')}
+            >
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-brand-600' : 'bg-red-500'}`} />
+              {connected ? '在线' : '离线'}
+            </span>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-sm text-slate-700">驱动</div>
+              <div className="text-sm font-semibold text-slate-900">
+                {driverStatus?.loaded ? '已加载' : driverStatus?.installed ? '未加载' : '未安装'}
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-sm text-slate-700">终端数量</div>
+              <div className="text-sm font-semibold text-slate-900">{terminals.length}</div>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-700/50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">PID</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">进程名</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">命令行</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">状态</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">风险分</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">事件数</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700">
-              {processes.map((process) => (
-                <tr key={process.id} className="hover:bg-gray-700/30 transition-colors">
-                  <td className="px-6 py-4 text-sm font-mono">{process.pid}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center">
-                      <CpuChipIcon className="w-4 h-4 mr-2 text-gray-500" />
-                      <span className="text-sm font-medium">{process.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-400 font-mono truncate max-w-xs">
-                    {process.command}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`flex items-center text-sm ${
-                      process.status === 'running' ? 'text-green-500' : 'text-gray-500'
-                    }`}>
-                      {process.status === 'running' ? (
-                        <><PlayIcon className="w-4 h-4 mr-1" /> 运行中</>
-                      ) : (
-                        <><StopIcon className="w-4 h-4 mr-1" /> 已停止</>
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded text-sm font-semibold ${getRiskColor(process.riskScore)}`}>
-                      {process.riskScore}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm">{process.eventsCount}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex space-x-2">
-                      <button className="text-blue-500 hover:text-blue-400 text-sm">详情</button>
-                      <button className="text-red-500 hover:text-red-400 text-sm">停止</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="lg:col-span-2 card">
+          <div className="text-sm font-semibold text-slate-900">核心策略</div>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button
+              type="button"
+              onClick={() => togglePolicy('auto_block', !config?.security?.auto_block)}
+              className={[
+                'rounded-2xl border px-4 py-4 text-left transition-colors',
+                config?.security?.auto_block
+                  ? 'border-brand-200 bg-brand-50 hover:bg-brand-100'
+                  : 'border-slate-200 bg-white hover:bg-slate-50',
+              ].join(' ')}
+            >
+              <div className="flex items-center justify-between">
+                <ShieldCheckIcon className="w-5 h-5 text-slate-700" />
+                <span className="text-xs font-semibold text-slate-600">
+                  {config?.security?.auto_block ? '已开启' : '未开启'}
+                </span>
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">自动阻断</div>
+              <div className="mt-1 text-xs text-slate-500">超过阈值时自动拦截高危操作</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => togglePolicy('block_network_connection', !config?.security?.block_network_connection)}
+              className={[
+                'rounded-2xl border px-4 py-4 text-left transition-colors',
+                config?.security?.block_network_connection
+                  ? 'border-brand-200 bg-brand-50 hover:bg-brand-100'
+                  : 'border-slate-200 bg-white hover:bg-slate-50',
+              ].join(' ')}
+            >
+              <div className="flex items-center justify-between">
+                <GlobeAltIcon className="w-5 h-5 text-slate-700" />
+                <span className="text-xs font-semibold text-slate-600">
+                  {config?.security?.block_network_connection ? '已开启' : '未开启'}
+                </span>
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">网络拦截</div>
+              <div className="mt-1 text-xs text-slate-500">阻断可疑外联与高危端口</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => togglePolicy('block_file_delete', !config?.security?.block_file_delete)}
+              className={[
+                'rounded-2xl border px-4 py-4 text-left transition-colors',
+                config?.security?.block_file_delete
+                  ? 'border-brand-200 bg-brand-50 hover:bg-brand-100'
+                  : 'border-slate-200 bg-white hover:bg-slate-50',
+              ].join(' ')}
+            >
+              <div className="flex items-center justify-between">
+                <TrashIcon className="w-5 h-5 text-slate-700" />
+                <span className="text-xs font-semibold text-slate-600">
+                  {config?.security?.block_file_delete ? '已开启' : '未开启'}
+                </span>
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">文件删除拦截</div>
+              <div className="mt-1 text-xs text-slate-500">防止删除重要目录与关键文件</div>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Real-time Logs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Event Stream */}
-        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-          <div className="p-6 border-b border-gray-700">
-            <h2 className="text-lg font-semibold">实时事件流</h2>
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">AI 终端进程</div>
+            <div className="text-xs text-slate-500">按风险排序</div>
           </div>
-          <div className="h-96 overflow-y-auto p-4 space-y-2 font-mono text-sm">
-            {logs.map((log, index) => (
-              <div 
-                key={index} 
-                className={`p-2 rounded ${
-                  log.includes('BLOCK') ? 'bg-red-500/10 text-red-400' :
-                  log.includes('WARN') ? 'bg-yellow-500/10 text-yellow-400' :
-                  'text-gray-400'
-                }`}
-              >
-                {log}
+          <div className="mt-4 space-y-3">
+            {terminals.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                暂无 AI 终端进程
               </div>
-            ))}
+            ) : (
+              [...terminals]
+                .sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0))
+                .slice(0, 12)
+                .map((t) => (
+                  <div key={t.pid} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
+                          <CpuChipIcon className="w-5 h-5 text-slate-700" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">
+                            {t.name}
+                            <span className="ml-2 text-xs text-slate-500">PID {t.pid}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 truncate max-w-[36ch]">
+                            {t.command_line || t.commandLine || t.path}
+                          </div>
+                          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                            <span className={`w-2 h-2 rounded-full ${t.is_tracked ? 'bg-brand-600' : 'bg-slate-300'}`} />
+                            {t.is_tracked ? '追踪中' : '未追踪'}
+                            {t.last_activity ? (
+                              <>
+                                <span>•</span>
+                                <span>活跃：{new Date(t.last_activity).toLocaleTimeString()}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold border ${getRiskBadge(t.risk_score || 0)}`}>
+                        风险 {t.risk_score ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                ))
+            )}
           </div>
         </div>
 
-        {/* Protection Status */}
-        <div className="space-y-6">
-          {/* Status Cards */}
-          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4">防护模块状态</h2>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg">
-                <div className="flex items-center">
-                  <ShieldCheckIcon className="w-5 h-5 text-green-500 mr-3" />
-                  <span>文件系统监控</span>
-                </div>
-                <span className="text-green-500 text-sm">运行中</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg">
-                <div className="flex items-center">
-                  <ShieldCheckIcon className="w-5 h-5 text-green-500 mr-3" />
-                  <span>进程监控</span>
-                </div>
-                <span className="text-green-500 text-sm">运行中</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg">
-                <div className="flex items-center">
-                  <ShieldCheckIcon className="w-5 h-5 text-green-500 mr-3" />
-                  <span>网络监控</span>
-                </div>
-                <span className="text-green-500 text-sm">运行中</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg">
-                <div className="flex items-center">
-                  <ShieldCheckIcon className="w-5 h-5 text-green-500 mr-3" />
-                  <span>AI 分析引擎</span>
-                </div>
-                <span className="text-green-500 text-sm">运行中</span>
-              </div>
-            </div>
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">近期事件</div>
+            <div className="text-xs text-slate-500">最近 30 条</div>
           </div>
+          <div className="mt-4 space-y-2">
+            {recent.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                暂无事件
+              </div>
+            ) : (
+              recent.map((log) => {
+                const level = String(log.risk_level || 'low')
+                const badge =
+                  level === 'critical'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : level === 'high'
+                      ? 'bg-orange-50 text-orange-700 border-orange-200'
+                      : level === 'medium'
+                        ? 'bg-accent-50 text-accent-800 border-accent-200'
+                        : 'bg-brand-50 text-brand-800 border-brand-200'
 
-          {/* Quick Actions */}
-          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4">快速操作</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <button className="p-4 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg text-red-500 transition-colors">
-                <NoSymbolIcon className="w-6 h-6 mx-auto mb-2" />
-                <span className="text-sm">紧急阻断</span>
-              </button>
-              <button className="p-4 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-yellow-500 transition-colors">
-                <ExclamationTriangleIcon className="w-6 h-6 mx-auto mb-2" />
-                <span className="text-sm">生成报告</span>
-              </button>
-            </div>
+                const action =
+                  log.action === 'blocked' || log.action === 'block'
+                    ? { label: '阻断', cls: 'bg-red-50 text-red-700 border-red-200' }
+                    : log.action === 'allowed' || log.action === 'allow'
+                      ? { label: '允许', cls: 'bg-brand-50 text-brand-800 border-brand-200' }
+                      : { label: '告警', cls: 'bg-accent-50 text-accent-800 border-accent-200' }
+
+                return (
+                  <div key={log.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${badge}`}>
+                            {level.toUpperCase()}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${action.cls}`}>
+                            {action.label}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-sm font-semibold text-slate-900 truncate">
+                          {log.process_name} ({log.process_id}) • {log.operation}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500 truncate">{log.target}</div>
+                      </div>
+                      <div className="shrink-0 text-sm font-bold text-slate-900">{log.risk_score ?? '-'}</div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Monitoring;
+export default Monitoring

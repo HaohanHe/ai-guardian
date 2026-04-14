@@ -483,10 +483,29 @@ async function apiRequest(method: string, endpoint: string, body?: any): Promise
       res.on('end', () => {
         try {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            resolve(data ? JSON.parse(data) : {});
+            const parsed = data ? JSON.parse(data) : {};
+            if (parsed && typeof parsed === 'object' && 'success' in parsed) {
+              if (parsed.success) {
+                resolve(parsed.data ?? {});
+              } else {
+                reject(new Error(parsed.error || 'Unknown error'));
+              }
+              return;
+            }
+            resolve(parsed);
           } else {
-            const error = data ? JSON.parse(data) : { error: 'Unknown error' };
-            reject(new Error(error.error || `HTTP ${res.statusCode}`));
+            const parsed = data ? JSON.parse(data) : {};
+            if (parsed && typeof parsed === 'object') {
+              if ('error' in parsed && parsed.error) {
+                reject(new Error(parsed.error));
+                return;
+              }
+              if ('message' in parsed && parsed.message) {
+                reject(new Error(parsed.message));
+                return;
+              }
+            }
+            reject(new Error(`HTTP ${res.statusCode}`));
           }
         } catch (e) {
           reject(new Error('Invalid JSON response'));

@@ -309,10 +309,10 @@ const Settings: React.FC = () => {
             <h2 className="text-xl font-semibold">通用设置</h2>
             
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <h3 className="font-medium">开机自启</h3>
-                  <p className="text-sm text-gray-400">系统启动时自动运行 AI Guardian</p>
+                  <p className="text-sm text-slate-500">系统启动时自动运行 AI Guardian</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -321,14 +321,14 @@ const Settings: React.FC = () => {
                     onChange={handleAutoStartToggle}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
                 </label>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <h3 className="font-medium">最小化到托盘</h3>
-                  <p className="text-sm text-gray-400">关闭窗口时最小化到系统托盘</p>
+                  <p className="text-sm text-slate-500">关闭窗口时最小化到系统托盘</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -337,14 +337,14 @@ const Settings: React.FC = () => {
                     onChange={(e) => updateConfigSection('general', { minimize_to_tray: e.target.checked })}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
                 </label>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <h3 className="font-medium">自动检查更新</h3>
-                  <p className="text-sm text-gray-400">定期检查新版本</p>
+                  <p className="text-sm text-slate-500">定期检查新版本</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -353,28 +353,28 @@ const Settings: React.FC = () => {
                     onChange={(e) => updateConfigSection('general', { check_updates: e.target.checked })}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
                 </label>
               </div>
 
-              <div className="p-4 bg-gray-700/30 rounded-lg">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <h3 className="font-medium mb-2">语言</h3>
                 <select
                   value={config.general.language}
                   onChange={(e) => updateConfigSection('general', { language: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900"
                 >
                   <option value="zh-CN">简体中文</option>
                   <option value="en-US">English</option>
                 </select>
               </div>
 
-              <div className="p-4 bg-gray-700/30 rounded-lg">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <h3 className="font-medium mb-2">主题</h3>
                 <select
                   value={config.general.theme}
                   onChange={(e) => updateConfigSection('general', { theme: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900"
                 >
                   <option value="dark">深色</option>
                   <option value="light">浅色</option>
@@ -391,7 +391,7 @@ const Settings: React.FC = () => {
             <h2 className="text-xl font-semibold">安全策略</h2>
             
             <div className="space-y-4">
-              <div className="p-4 bg-gray-700/30 rounded-lg">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <h3 className="font-medium mb-2">风险阈值: {config.security.risk_threshold}</h3>
                 <input
                   type="range"
@@ -401,16 +401,16 @@ const Settings: React.FC = () => {
                   onChange={(e) => updateConfigSection('security', { risk_threshold: parseInt(e.target.value) })}
                   className="w-full"
                 />
-                <div className="flex justify-between text-sm text-gray-400 mt-1">
+                <div className="flex justify-between text-sm text-slate-500 mt-1">
                   <span>宽松</span>
                   <span>严格</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <h3 className="font-medium">自动阻断高风险操作</h3>
-                  <p className="text-sm text-gray-400">超过阈值时自动阻断</p>
+                  <p className="text-sm text-slate-500">超过阈值时自动阻断</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -419,7 +419,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => updateConfigSection('security', { auto_block: e.target.checked })}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
                 </label>
               </div>
 
@@ -738,13 +738,13 @@ const Settings: React.FC = () => {
                 </label>
               </div>
 
-              <div className="p-4 bg-gray-700/30 rounded-lg">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <h3 className="font-medium mb-2">邮件通知 (可选)</h3>
                 <input
                   type="email"
                   value={config.notification.email || ''}
                   onChange={(e) => updateConfigSection('notification', { email: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900"
                   placeholder="输入邮箱地址"
                 />
               </div>
@@ -758,27 +758,27 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">设置</h1>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-slate-900">设置</h1>
         {hasChanges && (
-          <span className="text-sm text-yellow-500">有未保存的更改</span>
+          <span className="text-sm text-accent-700">有未保存的更改</span>
         )}
       </div>
 
-      <div className="flex gap-8">
+      <div className="flex gap-6">
         <div className="w-64 flex-shrink-0">
-          <nav className="space-y-1">
+          <nav className="space-y-1 rounded-2xl border border-slate-200 bg-white/60 backdrop-blur p-2">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-left ${
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
                     activeTab === tab.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-400 hover:bg-gray-800'
+                      ? 'bg-brand-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <Icon className="w-5 h-5" />
@@ -789,13 +789,13 @@ const Settings: React.FC = () => {
           </nav>
         </div>
 
-        <div className="flex-1 bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div className="flex-1 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
           {renderContent()}
 
-          <div className="mt-8 pt-6 border-t border-gray-700 flex justify-between">
+          <div className="mt-8 pt-6 border-t border-slate-200 flex justify-between">
             <button
               onClick={handleReset}
-              className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+              className="px-4 py-2 text-slate-600 hover:text-slate-900 transition-colors"
             >
               重置为默认
             </button>
@@ -806,14 +806,14 @@ const Settings: React.FC = () => {
                   setHasChanges(false);
                 }}
                 disabled={!hasChanges}
-                className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 取消
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving || !hasChanges}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? '保存中...' : '保存设置'}
               </button>
@@ -822,7 +822,7 @@ const Settings: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Settings;
+export default Settings
