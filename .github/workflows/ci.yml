@@ -160,17 +160,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install clang / libbpf / bpftool
+      - name: Install clang / libbpf
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libbpf-dev \
-            linux-tools-generic linux-tools-generic-hwe-22.04 || true
+          sudo apt-get install -y clang libbpf-dev
+
+      - name: Install bpftool (generic + HWE, whichever exists)
+        run: |
+          sudo apt-get install -y linux-tools-generic || true
+          sudo apt-get install -y linux-tools-generic-hwe-24.04 || true
+          sudo apt-get install -y linux-tools-generic-hwe-22.04 || true
 
       - name: Resolve newest bpftool binary
         id: resolve-bpftool
         run: |
-          # Ubuntu 的 bpftool 是按内核版本分发的包装器，运行内核（azure）往往没有
-          # 对应包；直接取 /usr/lib/linux-tools 下版本最高的真实二进制，
+          # Ubuntu 的 bpftool 按内核版本分发，运行内核（azure）常无对应包；
+          # 取 /usr/lib/linux-tools 下版本最高的真实二进制，
           # BTF dump 只读文件，与运行内核无关
           BIN="$(ls /usr/lib/linux-tools/*/bpftool 2>/dev/null | sort -V | tail -1)"
           test -n "$BIN"
