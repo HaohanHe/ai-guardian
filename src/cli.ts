@@ -505,6 +505,89 @@ program
     console.log(chalk.gray('请检查系统通知栏'));
   });
 
+// 实时监控（Linux）
+program
+  .command('watch')
+  .description('实时监控本机 AI Agent 进程，支持一键急停（Linux）')
+  .option('-i, --interval <ms>', '扫描间隔毫秒数', '2000')
+  .option('--json', '以 JSON Lines 输出事件')
+  .option('--no-estop-link', '关闭急停时自动暂停全部 agent')
+  .action(async options => {
+    const { LiveDefense } = await import('./core/live-defense.js');
+    const live = new LiveDefense({
+      monitor: { intervalMs: parseInt(options.interval, 10) },
+      autoSuspendOnEmergencyStop: options.estopLink,
+    });
+
+    live.on('event', (ev: { level: string; message: string; [k: string]: unknown }) => {
+      if (options.json) {
+        console.log(JSON.stringify(ev));
+        return;
+      }
+      const time = new Date(ev.timestamp as number).toLocaleTimeString();
+      const color =
+        ev.level === 'critical' ? chalk.red : ev.level === 'warning' ? chalk.yellow : chalk.gray;
+      console.log(`${chalk.dim(time)} ${color(ev.message)}`);
+    });
+
+    live.start();
+
+    if (!options.json) {
+      console.log(chalk.bold('\n实时防御运行中'));
+      console.log(chalk.gray('按键：x 急停（连按两次确认） · c 恢复全部暂停 · q 退出\n'));
+    }
+
+    let shutting = false;
+    const shutdown = () => {
+      if (shutting) return;
+      shutting = true;
+      live.stop();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
+    const stdin = process.stdin;
+    if (stdin.isTTY) {
+      stdin.setRawMode?.(true);
+      stdin.resume();
+      stdin.setEncoding('utf8');
+      stdin.on('data', (key: string) => {
+        if (key === 'q' || key === '\u0003') shutdown();
+        if (key === 'x') {
+          void live.emergencyStop.trigger('manual trigger from watch', 'cli');
+        }
+        if (key === 'c') {
+          void live.enforcer.resumeAll('manual resume from watch', 'cli');
+        }
+      });
+    }
+  });
+
+// 一次性列出当前 agent
+program
+  .command('agents')
+  .description('扫描并列出当前运行的 AI Agent 进程（Linux）')
+  .action(async () => {
+    const { LinuxProcessMonitor } = await import('./platform/linux-process-monitor.js');
+    const monitor = new LinuxProcessMonitor({ autostart: false });
+    monitor.scan();
+    const agents = monitor.getAgentProcesses();
+    if (agents.length === 0) {
+      console.log(chalk.gray('未发现运行中的 AI Agent 进程'));
+      return;
+    }
+    for (const a of agents) {
+      const state = a.state === 'stopped' ? chalk.yellow('stopped') : chalk.green('running');
+      console.log(
+        `${chalk.bold(a.agent)}  pid ${a.pid}  ppid ${a.ppid}  ${state}  ${chalk.dim(a.matchReason)}`,
+      );
+      console.log(chalk.dim(`  ${a.cmdline || a.comm}`));
+    }
+    monitor.stop();
+  });
+
 // 解析命令行参数
 program.parse();
 

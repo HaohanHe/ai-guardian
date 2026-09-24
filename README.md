@@ -6,7 +6,7 @@
 
 AI Guardian 是一个给 AI Agent 用的终端防护工具。简单说就是：跑在系统里的 Agent 可能会瞎删文件、执行危险命令、偷偷提权，这个工具负责盯着它，发现不对就掐断。
 
-Windows 端的文件系统过滤驱动已经写好了（Minifilter，701 行 C），能识别标记过的 AI Agent 进程并拦截敏感路径上的删除/写入操作。Linux 端的 eBPF 骨架在仓库里，但还没有实际实现。
+Windows 端的文件系统过滤驱动已经写好了（Minifilter，701 行 C），能识别标记过的 AI Agent 进程并拦截敏感路径上的删除/写入操作。Linux 端这次补齐了一套用户态实时防御：扫描 /proc 识别运行中的 Agent 进程，用信号按进程树暂停、恢复或终止，急停按钮也接上了真实动作；eBPF 程序仍作为后续的高性能强制路径保留。
 
 ### 这是什么
 
@@ -18,6 +18,7 @@ Windows 端的文件系统过滤驱动已经写好了（Minifilter，701 行 C�
 
 - Windows Minifilter 文件系统过滤：PreCreate / PreWrite / PreSetInformation 回调，AI 进程哈希表（256 桶，最多 1024 个 PID），敏感路径检测（System32、Program Files、用户数据目录），直接在内核态阻断删除操作
 - ETW 进程监控：用 ToolHelp32 扫描进程列表，自动识别 AI 终端（按进程名/路径匹配），把 PID 注册给驱动
+- Linux 实时进程防御：轮询 /proc 识别 Agent（内置十余种特征，子进程继承标记），跟踪运行/暂停状态；处置按进程树发 SIGSTOP / SIGCONT / SIGTERM（宽限后 SIGKILL）；急停激活自动暂停全部 Agent；CLI 提供 watch / agents 命令，Web 仪表盘通过 WebSocket 实时推送进程与事件，可在页面上直接暂停、恢复、终止
 - TS 分析模块：prompt injection 检测、混淆命令检测、MCP injection 检测、skill 供应链检查、风险评分。这些跑在用户态，对命令行输出做语义分析
 - Rust 核心引擎：主控制器、审计日志、风险引擎、配置管理，axum 跑 Web API
 - MCP server：可以作为 MCP 工具接入 OpenClaw 等 Agent 框架
@@ -27,15 +28,21 @@ Windows 端的文件系统过滤驱动已经写好了（Minifilter，701 行 C�
 ```
 ai-guardian/
 ├── driver/windows/AiGuardianDriver.c   # Windows Minifilter 驱动（C，701 行）
-├── driver/linux/ai_guardian.bpf.c       # Linux eBPF（骨架，未实现）
+├── driver/linux/ai_guardian.bpf.c       # Linux eBPF（后续高性能路径）
 ├── src/
-│   ├── core/                           # Rust 核心：guardian、risk_engine、audit_logger
+│   ├── core/
+│   │   ├── live-defense.ts             # 实时防御编排（监控+处置+急停联动）
+│   │   └── ...                          # Rust 核心：guardian、risk_engine、audit_logger
+│   ├── platform/
+│   │   ├── linux-process-monitor.ts    # /proc 扫描与 Agent 识别
+│   │   └── linux-enforcer.ts           # 信号处置（SIGSTOP/CONT/TERM/KILL）
 │   ├── driver/windows/mod.rs           # 驱动 IOCTL 封装
 │   ├── monitor/windows/etw.rs          # ETW 进程监控
 │   ├── analysis/                       # TS 分析模块（prompt-injection 等）
-│   ├── web/                            # axum Web API
+│   ├── web/                            # Web 服务与仪表盘（含 WebSocket）
 │   ├── mcp/                            # MCP server
 │   └── cli.ts                          # CLI 入口
+├── tests/linux-runtime.test.ts         # Linux 运行时测试（12 项）
 ├── ui/                                 # Electron + Vite + Tailwind 前端
 ├── config/default.yaml                 # 默认配置
 └── scripts/install-driver.ps1          # Windows 驱动安装脚本
@@ -63,7 +70,17 @@ bcdedit /set testsigning on
 # 重启
 ```
 
-**Linux：** eBPF 部分只有骨架，需要 Kernel 4.18+ 和 root，但当前不能实际拦截。
+**Linux（用户态实时防御，无需内核模块）：**
+
+```bash
+npm install
+npm run build
+node dist/cli.js server -p 3456     # Web 仪表盘：实时进程、事件、处置按钮
+node dist/cli.js watch              # 终端实时监控，x 急停（连按两次）/ c 恢复 / q 退出
+node dist/cli.js agents             # 一次性列出当前 Agent
+```
+
+暂停或终止其他用户的进程需要相应权限。eBPF 强制路径（Kernel 4.18+、root）仍在开发。
 
 **TS 侧：**
 
@@ -83,7 +100,9 @@ Node.js >= 18。
 | ETW 进程识别 | 已实现 |
 | Rust 核心 + Web API | 已实现 |
 | TS 分析模块 | 已实现 |
-| Linux eBPF | 骨架预留，未实现 |
+| Linux 实时进程防御（用户态） | 已实现，测试通过 |
+| Web 仪表盘实时进程 / 处置 | 已实现 |
+| Linux eBPF | 骨架预留，后续强制路径 |
 | Electron UI | 目录在，未完成 |
 
 ### 许可证
@@ -96,7 +115,7 @@ MIT License，详见 [LICENSE](LICENSE)。
 
 AI Guardian は AI エージェント向けのエンドポイント保護ツールです。要するに、システム上で動いているエージェントがファイルを消したり危険なコマンドを実行したりするのを監視して、おかしいと思ったら遮断します。
 
-Windows 向けのファイルシステムフィルタドライバは実装済みです（Minifilter、C で 701 行）。登録された AI エージェントのプロセスを識別して、センシティブなパスへの削除・書き込み操作をブロックします。Linux 向けの eBPF は骨組みだけ置いてあり、まだ実装されていません。
+Windows 向けのファイルシステムフィルタドライバは実装済みです（Minifilter、C で 701 行）。登録された AI エージェントのプロセスを識別して、センシティブなパスへの削除・書き込み操作をブロックします。Linux 向けには今回、ユーザーランドのリアルタイム防御を追加しました。/proc をスキャンして実行中のエージェントを識別し、プロセスツリー単位でシグナルによる一時停止・再開・終了を行い、緊急停止ボタンも実際のシグナルに連携します。eBPF プログラムは今後の高パフォーマンス強制経路として残しています。
 
 ### これは何か
 
@@ -108,6 +127,7 @@ Windows 向けのファイルシステムフィルタドライバは実装済み
 
 - Windows Minifilter フィルタリング：PreCreate / PreWrite / PreSetInformation コールバック、AI プロセスのハッシュテーブル（256 バケット、最大 1024 PID）、センシティブパスの判定（System32、Program Files、ユーザーデータ）、カーネルモードでの削除操作のブロック
 - ETW プロセス監視：ToolHelp32 API でプロセス一覧をスキャンし、プロセス名・パスから AI 端末を自動識別してドライバに PID を登録
+- Linux リアルタイムプロセス防御：/proc をポーリングしてエージェントを識別（10 種類以上のシグネチャを内蔵、子プロセスにも継承）し、実行／停止状態を追跡。プロセスツリー単位で SIGSTOP / SIGCONT / SIGTERM（猶予後に SIGKILL）を送信し、緊急停止で全エージェントを自動停止。CLI に watch / agents コマンド、Web ダッシュボードでは WebSocket でプロセスとイベントをリアルタイム表示し、画面上で一時停止・再開・終了が可能
 - TypeScript 分析モジュール：プロンプトインジェクション検出、難読化コマンド検出、MCP インジェクション検出、スキルサプライチェーンチェック、リスクスコアリング。ユーザーモードでコマンド出力を解析します
 - Rust コアエンジン：メインコントローラー、監査ログ、リスクエンジン、設定管理。axum で Web API を提供
 - MCP サーバー：OpenClaw などのエージェントフレームワークに MCP ツールとして組み込めます
@@ -117,15 +137,21 @@ Windows 向けのファイルシステムフィルタドライバは実装済み
 ```
 ai-guardian/
 ├── driver/windows/AiGuardianDriver.c   # Windows Minifilter ドライバ（C、701 行）
-├── driver/linux/ai_guardian.bpf.c       # Linux eBPF（骨組みのみ、未実装）
+├── driver/linux/ai_guardian.bpf.c       # Linux eBPF（今後の高パフォーマンス経路）
 ├── src/
-│   ├── core/                           # Rust コア：guardian、risk_engine、audit_logger
+│   ├── core/
+│   │   ├── live-defense.ts             # リアルタイム防御の統合（監視＋処置＋緊急停止連携）
+│   │   └── ...                          # Rust コア：guardian、risk_engine、audit_logger
+│   ├── platform/
+│   │   ├── linux-process-monitor.ts    # /proc スキャンとエージェント識別
+│   │   └── linux-enforcer.ts           # シグナル処置（SIGSTOP/CONT/TERM/KILL）
 │   ├── driver/windows/mod.rs           # ドライバ IOCTL ラッパー
 │   ├── monitor/windows/etw.rs          # ETW プロセス監視
 │   ├── analysis/                       # TS 分析モジュール（prompt-injection など）
-│   ├── web/                            # axum Web API
+│   ├── web/                            # Web サーバーとダッシュボード（WebSocket 含む）
 │   ├── mcp/                            # MCP サーバー
 │   └── cli.ts                          # CLI エントリー
+├── tests/linux-runtime.test.ts         # Linux ランタイムのテスト（12 件）
 ├── ui/                                 # Electron + Vite + Tailwind フロントエンド
 ├── config/default.yaml                 # デフォルト設定
 └── scripts/install-driver.ps1          # Windows ドライバインストールスクリプト
@@ -153,7 +179,17 @@ bcdedit /set testsigning on
 # 再起動
 ```
 
-**Linux：** eBPF 部分は骨組みだけで、カーネル 4.18 以上と root 権限が必要ですが、現状では実際の遮断はできません。
+**Linux（ユーザーランドのリアルタイム防御、カーネルモジュール不要）：**
+
+```bash
+npm install
+npm run build
+node dist/cli.js server -p 3456     # Web ダッシュボード：プロセス、イベント、処置ボタン
+node dist/cli.js watch              # ターミナル監視、x で緊急停止（2 回押し）/ c で再開 / q で終了
+node dist/cli.js agents             # 現在のエージェントを一覧表示
+```
+
+他ユーザーのプロセスを停止・終了するには相応の権限が必要です。eBPF 強制経路（カーネル 4.18 以上、root）は開発中です。
 
 **TypeScript 側：**
 
@@ -173,7 +209,9 @@ Node.js 18 以上が必要です。
 | ETW プロセス識別 | 実装済み |
 | Rust コア + Web API | 実装済み |
 | TS 分析モジュール | 実装済み |
-| Linux eBPF | 骨組みのみ、未実装 |
+| Linux リアルタイムプロセス防御（ユーザーランド） | 実装済み、テスト通過 |
+| Web ダッシュボードのリアルタイムプロセス / 処置 | 実装済み |
+| Linux eBPF | 骨組みのみ、今後の強制経路 |
 | Electron UI | ディレクトリはあるが未完成 |
 
 ### ライセンス
@@ -186,7 +224,7 @@ MIT License。詳細は [LICENSE](LICENSE) を参照してください。
 
 AI Guardian is an endpoint protection tool built for AI agents. The problem it tries to solve is straightforward: when an agent runs inside your actual system, it may delete files it should not, run dangerous commands, or escalate privileges on its own. This tool watches the agent's behavior and cuts it off when something goes wrong.
 
-The Windows file system filter driver is done (Minifilter, 701 lines of C). It can identify registered AI agent processes and block delete or write operations on sensitive paths. The Linux eBPF skeleton exists in the repo but is not implemented yet.
+The Windows file system filter driver is done (Minifilter, 701 lines of C). It can identify registered AI agent processes and block delete or write operations on sensitive paths. This round adds a userspace live defense on Linux: it scans /proc to identify running agent processes and uses signals to suspend, resume, or terminate them by process tree, and the emergency-stop button is now wired to real signals. The eBPF program remains as the future high-performance enforcement path.
 
 ### What this is
 
@@ -198,6 +236,7 @@ The working path today is Windows. After the Minifilter driver loads, you tell i
 
 - Windows Minifilter filtering: PreCreate, PreWrite, and PreSetInformation callbacks, an AI process hash table (256 buckets, up to 1024 PIDs), sensitive path detection (System32, Program Files, user data directories), and direct kernel-mode blocking of delete operations
 - ETW process monitoring: scans the process list via ToolHelp32, identifies AI terminals by process name and path, then registers their PIDs with the driver
+- Linux live process defense: polls /proc to identify agents (over a dozen built-in signatures, inherited by child processes) and tracks running/stopped state. Enforcement is process-tree aware: SIGSTOP / SIGCONT / SIGTERM (SIGKILL after a grace period); emergency stop auto-suspends every agent. The CLI offers watch and agents commands, and the web dashboard pushes processes and events over WebSocket with on-page suspend/resume/terminate controls
 - TypeScript analysis modules: prompt injection detection, obfuscation detection, MCP injection detection, skill supply chain checks, and risk scoring. These run in user space and analyze command output
 - Rust core engine: main controller, audit logger, risk engine, and config management, with axum serving a Web API
 - MCP server: can be plugged into agent frameworks like OpenClaw as an MCP tool
@@ -207,15 +246,21 @@ The working path today is Windows. After the Minifilter driver loads, you tell i
 ```
 ai-guardian/
 ├── driver/windows/AiGuardianDriver.c   # Windows Minifilter driver (C, 701 lines)
-├── driver/linux/ai_guardian.bpf.c       # Linux eBPF (skeleton only, not implemented)
+├── driver/linux/ai_guardian.bpf.c       # Linux eBPF (future high-performance path)
 ├── src/
-│   ├── core/                           # Rust core: guardian, risk_engine, audit_logger
+│   ├── core/
+│   │   ├── live-defense.ts             # Live defense orchestration (monitor + enforce + estop)
+│   │   └── ...                          # Rust core: guardian, risk_engine, audit_logger
+│   ├── platform/
+│   │   ├── linux-process-monitor.ts    # /proc scan and agent identification
+│   │   └── linux-enforcer.ts           # Signal enforcement (SIGSTOP/CONT/TERM/KILL)
 │   ├── driver/windows/mod.rs           # Driver IOCTL wrapper
 │   ├── monitor/windows/etw.rs          # ETW process monitor
 │   ├── analysis/                       # TS analysis modules (prompt-injection, etc.)
-│   ├── web/                            # axum Web API
+│   ├── web/                            # Web server and dashboard (with WebSocket)
 │   ├── mcp/                            # MCP server
 │   └── cli.ts                          # CLI entry point
+├── tests/linux-runtime.test.ts         # Linux runtime tests (12 cases)
 ├── ui/                                 # Electron + Vite + Tailwind frontend
 ├── config/default.yaml                 # Default configuration
 └── scripts/install-driver.ps1          # Windows driver install script
@@ -243,7 +288,17 @@ bcdedit /set testsigning on
 # Reboot
 ```
 
-**Linux:** The eBPF side is a skeleton. It needs Kernel 4.18+ and root, but it does not actually block anything yet.
+**Linux (userspace live defense, no kernel module required):**
+
+```bash
+npm install
+npm run build
+node dist/cli.js server -p 3456     # Web dashboard: live processes, events, controls
+node dist/cli.js watch              # Terminal monitoring, x estop (press twice) / c resume / q quit
+node dist/cli.js agents             # List current agents once
+```
+
+Suspending or killing another user's processes requires appropriate privileges. The eBPF enforcement path (Kernel 4.18+, root) is still in development.
 
 **TypeScript side:**
 
@@ -263,7 +318,9 @@ Requires Node.js 18 or later.
 | ETW process identification | Implemented |
 | Rust core + Web API | Implemented |
 | TS analysis modules | Implemented |
-| Linux eBPF | Skeleton only, not implemented |
+| Linux live process defense (userspace) | Implemented, tests passing |
+| Dashboard live processes / enforcement | Implemented |
+| Linux eBPF | Skeleton only, future enforcement path |
 | Electron UI | Directory exists, unfinished |
 
 ### License

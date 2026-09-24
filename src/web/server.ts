@@ -10,7 +10,9 @@
 
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { EventEmitter } from 'events';
+import { WebSocketServer } from 'ws';
 import { AIGuardian } from '../core/guardian.js';
+import { LiveDefense } from '../core/live-defense.js';
 import { emergencyStop } from '../core/emergency-stop.js';
 import { environmentContext } from '../core/environment-context.js';
 import { skillSupplyChainAnalyzer } from '../analysis/skill-supply-chain.js';
@@ -57,6 +59,8 @@ export class GuardianWebServer extends EventEmitter {
   private guardian: AIGuardian;
   private chatHistory: ChatMessage[] = [];
   private llmProvider: ReturnType<typeof createLLMProvider> | null = null;
+  private live: LiveDefense;
+  private wss: WebSocketServer;
 
   constructor(config?: WebServerConfig) {
     super();
@@ -64,6 +68,9 @@ export class GuardianWebServer extends EventEmitter {
     this.authToken = config?.authToken || this.generateToken();
     this.autoOpenBrowser = config?.autoOpenBrowser ?? true;
     this.guardian = new AIGuardian();
+    // 实时防御复用 web 侧的急停单例，保证按钮与信号联动是同一个状态机
+    this.live = new LiveDefense({ emergencyStop });
+    this.wss = new WebSocketServer({ noServer: true });
     this.loadDefaultLLMConfig();
     this.setupRoutes();
   }
@@ -255,6 +262,37 @@ You MUST recommend blocking when:
     this.server.on('request', (req, res) => {
       this.handleRequest(req, res);
     });
+
+    // WebSocket：/ws/events，实时推送进程与处置事件
+    this.server.on('upgrade', (req, socket, head) => {
+      const url = new URL(req.url || '/', `http://${req.headers.host}`);
+      if (url.pathname !== '/ws/events') {
+        socket.destroy();
+        return;
+      }
+      const token = url.searchParams.get('token');
+      if (process.env.AI_GUARDIAN_NO_AUTH !== 'true' && token !== this.authToken) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      this.wss.handleUpgrade(req, socket, head, ws => {
+        ws.send(JSON.stringify({ type: 'snapshot', data: this.live.snapshot() }));
+        this.wss.emit('connection', ws, req);
+      });
+    });
+
+    // 实时事件广播给全部 WS 客户端
+    this.live.on('event', event => {
+      this.broadcast({ type: 'event', data: event });
+    });
+  }
+
+  private broadcast(message: unknown): void {
+    const payload = JSON.stringify(message);
+    for (const client of this.wss.clients) {
+      if (client.readyState === client.OPEN) client.send(payload);
+    }
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -331,6 +369,15 @@ You MUST recommend blocking when:
           break;
         case '/api/llm-config':
           await this.handleLLMConfig(req, res);
+          break;
+        case '/api/processes':
+          this.handleProcesses(res);
+          break;
+        case '/api/events':
+          this.handleLiveEvents(res);
+          break;
+        case '/api/enforce':
+          await this.handleEnforce(req, res);
           break;
         default:
           this.jsonResponse(res, 404, { error: 'Not found' });
@@ -770,9 +817,56 @@ You MUST recommend blocking when:
     this.jsonResponse(res, 405, { error: 'Method not allowed' });
   }
 
+  private handleProcesses(res: ServerResponse): void {
+    const snapshot = this.live.snapshot();
+    this.jsonResponse(res, 200, {
+      running: snapshot.running,
+      agents: snapshot.agents,
+      stats: snapshot.stats,
+    });
+  }
+
+  private handleLiveEvents(res: ServerResponse): void {
+    this.jsonResponse(res, 200, { events: this.live.getEvents(100) });
+  }
+
+  private async handleEnforce(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method !== 'POST') {
+      this.jsonResponse(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+    const body = (await this.getBody(req)) as {
+      pid: number;
+      action: 'suspend' | 'resume' | 'terminate';
+      reason?: string;
+    };
+    if (!body || typeof body.pid !== 'number' || !body.action) {
+      this.jsonResponse(res, 400, { error: 'pid and action required' });
+      return;
+    }
+    const reason = body.reason || `web ${body.action}`;
+    let record;
+    switch (body.action) {
+      case 'suspend':
+        record = await this.live.suspendPid(body.pid, reason, 'web');
+        break;
+      case 'resume':
+        record = await this.live.resumePid(body.pid, reason, 'web');
+        break;
+      case 'terminate':
+        record = await this.live.terminatePid(body.pid, reason, 'web');
+        break;
+      default:
+        this.jsonResponse(res, 400, { error: 'invalid action' });
+        return;
+    }
+    this.jsonResponse(res, 200, { record });
+  }
+
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server.listen(this.port, async () => {
+        this.live.start();
         const url = `http://localhost:${this.port}`;
         console.log(`[AI Guardian] Web server started on port ${this.port}`);
         console.log(`[AI Guardian] Access: ${url}`);
@@ -814,6 +908,8 @@ You MUST recommend blocking when:
 
   stop(): Promise<void> {
     return new Promise((resolve) => {
+      this.live.stop();
+      this.wss.close();
       this.server.close(() => {
         console.log('[AI Guardian] Web server stopped');
         resolve();
@@ -1104,6 +1200,36 @@ You MUST recommend blocking when:
     </div>
 
     <div class="card" style="margin-top: 2rem;">
+      <h2>Live Process Defense <span id="live-status" style="color: #666; font-size: 0.8em;">(Linux)</span></h2>
+      <p style="color: #888; font-size: 0.9em;">
+        Tracks running AI agent processes on this host. Actions apply to the whole process tree
+        (SIGSTOP / SIGCONT / SIGTERM+SIGKILL).
+      </p>
+      <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+        <button onclick="refreshProcesses()">Refresh</button>
+        <button class="secondary" onclick="refreshLiveEvents()">Load Events</button>
+      </div>
+      <div style="max-height:260px; overflow-y:auto; background:#1a1a25; border-radius:6px; padding:0.5rem; margin-bottom:1rem;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+          <thead>
+            <tr style="color:#888; text-align:left;">
+              <th style="padding:4px;">Agent</th>
+              <th style="padding:4px;">PID</th>
+              <th style="padding:4px;">State</th>
+              <th style="padding:4px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="live-process-rows">
+            <tr><td colspan="4" style="color:#666; padding:8px;">No data. Press Refresh.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="live-events" style="max-height:180px; overflow-y:auto; background:#1a1a25; border-radius:6px; padding:1rem; font-size:0.85em;">
+        <p style="color:#666;">Live events appear here (WebSocket).</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 2rem;">
       <h2>Terminal Monitor <span id="monitor-status" style="color: #666; font-size: 0.8em;">(Inactive)</span></h2>
       <p style="color: #888; font-size: 0.9em;">Automatically monitors terminal activity and detects security threats</p>
       <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
@@ -1366,6 +1492,82 @@ You MUST recommend blocking when:
     async function resumeSystem() {
       await apiCall('POST', '/resume');
       updateEmergencyStatus();
+    }
+
+    /* ---------- Live Process Defense ---------- */
+    function liveWsUrl() {
+      var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      var tokenPart = NO_AUTH_MODE ? '' : '?token=' + encodeURIComponent(API_TOKEN);
+      return proto + '://' + location.host + '/ws/events' + tokenPart;
+    }
+
+    function renderProcesses(agents) {
+      var tbody = document.getElementById('live-process-rows');
+      if (!agents || agents.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:#666; padding:8px;">No AI agent processes detected.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = agents.map(function (a) {
+        var stateColor = a.state === 'stopped' ? '#e0a030' : '#4caf50';
+        return '<tr>' +
+          '<td style="padding:4px;">' + a.agent + '</td>' +
+          '<td style="padding:4px;">' + a.pid + '</td>' +
+          '<td style="padding:4px; color:' + stateColor + ';">' + a.state + '</td>' +
+          '<td style="padding:4px; white-space:nowrap;">' +
+            '<button class="secondary" style="padding:2px 8px;" onclick="enforceAction(' + a.pid + ',\'suspend\')">Suspend</button> ' +
+            '<button class="secondary" style="padding:2px 8px;" onclick="enforceAction(' + a.pid + ',\'resume\')">Resume</button> ' +
+            '<button class="danger" style="padding:2px 8px;" onclick="enforceAction(' + a.pid + ',\'terminate\')">Kill</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    async function refreshProcesses() {
+      try {
+        var data = await apiCall('GET', '/processes');
+        renderProcesses(data.agents);
+      } catch (e) { /* auth or network error */ }
+    }
+
+    async function enforceAction(pid, action) {
+      if (action === 'terminate' && !confirm('Terminate agent pid ' + pid + ' and all its children?')) return;
+      await apiCall('POST', '/enforce', { pid: pid, action: action, reason: 'web ' + action });
+      setTimeout(refreshProcesses, 400);
+    }
+
+    function appendLiveEvent(ev) {
+      var box = document.getElementById('live-events');
+      if (box.children.length === 1 && box.children[0].tagName === 'P') box.innerHTML = '';
+      var color = ev.level === 'critical' ? '#ff6b6b' : ev.level === 'warning' ? '#e0a030' : '#9aa';
+      var line = document.createElement('div');
+      line.style.color = color;
+      line.textContent = new Date(ev.timestamp).toLocaleTimeString() + '  ' + ev.message;
+      box.insertBefore(line, box.firstChild);
+      while (box.children.length > 60) box.removeChild(box.lastChild);
+    }
+
+    async function refreshLiveEvents() {
+      var data = await apiCall('GET', '/events');
+      (data.events || []).reverse().forEach(appendLiveEvent);
+    }
+
+    function connectLiveWs() {
+      try {
+        var ws = new WebSocket(liveWsUrl());
+        ws.onmessage = function (msg) {
+          var packet = JSON.parse(msg.data);
+          if (packet.type === 'snapshot') {
+            renderProcesses(packet.data.agents);
+            (packet.data.recentEvents || []).forEach(appendLiveEvent);
+          } else if (packet.type === 'event') {
+            appendLiveEvent(packet.data);
+            if (packet.data.type === 'process:new' || packet.data.type === 'process:exit') {
+              refreshProcesses();
+            }
+          }
+        };
+        ws.onclose = function () { setTimeout(connectLiveWs, 3000); };
+      } catch (e) { /* WS unavailable; use Refresh buttons */ }
     }
 
     // Terminal Monitor functions
@@ -1674,6 +1876,11 @@ You MUST recommend blocking when:
     // Initial load
     refreshPending();
     updateEmergencyStatus();
+    refreshProcesses();
+    (function initLiveWs() {
+      ensureToken();
+      connectLiveWs();
+    })();
   </script>
 </body>
 </html>`;
