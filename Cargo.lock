@@ -22,6 +22,7 @@ dependencies = [
  "futures",
  "hyper",
  "lazy_static",
+ "libc",
  "log",
  "nix",
  "num_cpus",

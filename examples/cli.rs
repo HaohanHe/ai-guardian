@@ -173,7 +173,6 @@ fn cmd_list() {
     {
         println!("⚠️  此功能仅在 Windows 平台可用");
         println!("非 Windows 平台暂不支持进程列表功能");
-        return;
     }
 
     #[cfg(windows)]

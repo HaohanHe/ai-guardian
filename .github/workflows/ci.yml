@@ -195,7 +195,98 @@ jobs:
           if-no-files-found: error
 
   # =========================================================
-  # Electron UI：lint / test / build（产物落在根 dist/main、dist/renderer）
+  # 内核级执行拦截：fanotify permission event（需 CAP_SYS_ADMIN）
+  # 在 execve 之前裁决，验证瞬时命令也能拦住
+  # =========================================================
+  kernel-enforcement:
+    name: Kernel Enforcement (fanotify)
+    needs: rust-quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build enforcer
+        run: cargo build --release --bin fanotify-enforcer
+
+      - name: Execution blocking end-to-end test
+        run: |
+          set -euxo pipefail
+          WD="$PWD"
+          ENF="$WD/target/release/fanotify-enforcer"
+
+          mkdir -p /tmp/guardfan/deny
+          cp /bin/true /tmp/guardfan/deny/true
+
+          # 毫秒级动作的“快速 agent”，用 fifo + read 做 shell 内建节流（不产生 exec）
+          cat > /tmp/fast-agent.sh <<'AGENT'
+          #!/bin/bash
+          LOG=/tmp/fast_damage.log
+          FIFO=/tmp/guard_pace.fifo
+          mkfifo "$FIFO"
+          exec 9<>"$FIFO"
+          i=0
+          while true; do
+            i=$((i+1))
+            bash -c "echo action-$i >> $LOG"
+            read -t 0.05 -u 9 _ || true
+          done
+          AGENT
+          chmod +x /tmp/fast-agent.sh
+          : > /tmp/fast_damage.log
+
+          # ---- 阶段 1：只启用 deny-prefix ----
+          sudo "$ENF" --deny-prefix /tmp/guardfan/deny \
+            > /tmp/enf1.log 2>&1 &
+          sleep 1
+          if /tmp/guardfan/deny/true; then
+            echo "FAIL: denied binary was executed"; exit 1
+          fi
+          /bin/true   # 非命中二进制正常执行
+
+          bash -c 'exec -a claude-code bash /tmp/fast-agent.sh' &
+          AG=$!
+          sleep 2
+          N1=$(wc -l < /tmp/fast_damage.log)
+          test "$N1" -gt 0
+          echo "phase1: agent produced $N1 actions (no lockdown yet)"
+
+          # ---- 阶段 2：重启并加入 agent lockdown ----
+          sudo pkill -TERM -x fanotify-enforc
+          sleep 1
+          sudo "$ENF" --deny-prefix /tmp/guardfan/deny --lockdown-agent claude-code \
+            > /tmp/enf2.log 2>&1 &
+          sleep 1
+          N2=$(wc -l < /tmp/fast_damage.log)
+          sleep 3
+          N3=$(wc -l < /tmp/fast_damage.log)
+          echo "phase2: lines at lockdown=$N2, after 3s=$N3"
+          test "$N2" -eq "$N3"
+          grep -q 'spawned under locked-down agent' /tmp/enf2.log
+          grep -q '"decision":"deny"' /tmp/enf2.log
+
+          # ---- 清理 ----
+          sudo pkill -TERM -x fanotify-enforc
+          kill "$AG" 2>/dev/null || true
+          rm -f /tmp/guard_pace.fifo
+          echo "fanotify enforcement test passed"
+
+      - name: Upload enforcer binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanotify-enforcer-bin
+          path: target/release/fanotify-enforcer
+          if-no-files-found: error
+
+  # =========================================================
+  # Electron UI：lint / test / build（产物落在 ui/dist/main、ui/dist/renderer）
   # =========================================================
   ui:
     name: Electron UI (${{ matrix.os }})
@@ -246,7 +337,7 @@ jobs:
   # =========================================================
   release:
     name: Create Release
-    needs: [node-ci, rust-build, ebpf, ui]
+    needs: [node-ci, rust-build, ebpf, kernel-enforcement, ui]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -273,11 +364,17 @@ jobs:
           cp artifacts/rust-windows-amd64/ai-guardian.exe "ai-guardian-${TAG}-windows-amd64.exe"
           chmod +x "ai-guardian-${TAG}-linux-amd64" "ai-guardian-${TAG}-linux-arm64"
 
-          # Node/TS 运行时整包（artifact 下载后是解压目录，重新打包）
-          tar -czf "ai-guardian-node-${TAG}.tar.gz" -C artifacts/node-dist .
+          # Node/TS 运行时整包（node-ci 已打好 tarball 并作为 artifact 上传）
+          cp artifacts/node-dist/ai-guardian-node-dist.tar.gz \
+            "ai-guardian-node-${TAG}.tar.gz"
 
           # eBPF 对象
           cp artifacts/ebpf-object/ai_guardian.bpf.o "ai-guardian-${TAG}.bpf.o"
+
+          # fanotify 执行拦截守护进程
+          cp artifacts/fanotify-enforcer-bin/fanotify-enforcer \
+            "fanotify-enforcer-${TAG}-linux-amd64"
+          chmod +x "fanotify-enforcer-${TAG}-linux-amd64"
 
           # UI 构建整包
           tar -czf "ai-guardian-ui-${TAG}.tar.gz" -C artifacts/ui-ubuntu-latest .
@@ -285,7 +382,9 @@ jobs:
           # Debian 包（amd64）
           mkdir -p deb/DEBIAN deb/usr/bin
           cp artifacts/rust-linux-amd64/ai-guardian deb/usr/bin/ai-guardian
-          chmod 755 deb/usr/bin/ai-guardian
+          cp artifacts/fanotify-enforcer-bin/fanotify-enforcer \
+            deb/usr/bin/fanotify-enforcer
+          chmod 755 deb/usr/bin/ai-guardian deb/usr/bin/fanotify-enforcer
           {
             echo "Package: ai-guardian"
             echo "Version: ${VER}"
@@ -294,7 +393,7 @@ jobs:
             echo "Architecture: amd64"
             echo "Maintainer: Haohan He <hehaohan@hsyscn.top>"
             echo "Description: Runtime guard for AI coding agents"
-            echo " Watches AI agent processes and can suspend or stop them."
+            echo " Watches AI agent processes, can suspend or stop them and block exec."
           } > deb/DEBIAN/control
           dpkg-deb --build --root-owner-group deb "ai-guardian_${VER}_amd64.deb"
 
@@ -312,5 +411,6 @@ jobs:
             "ai-guardian-${TAG}-windows-amd64.exe" \
             "ai-guardian-node-${TAG}.tar.gz" \
             "ai-guardian-${TAG}.bpf.o" \
+            "fanotify-enforcer-${TAG}-linux-amd64" \
             "ai-guardian-ui-${TAG}.tar.gz" \
             "ai-guardian_${TAG#v}_amd64.deb"
