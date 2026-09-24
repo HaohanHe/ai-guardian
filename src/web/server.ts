@@ -76,6 +76,25 @@ export class GuardianWebServer extends EventEmitter {
   }
 
   private loadDefaultLLMConfig(): void {
+    // 优先从环境变量读取密钥，避免把 key 写进配置文件或磁盘
+    const envProviders: Record<string, { keyEnv: string; model: string }> = {
+      siliconflow: { keyEnv: 'SILICONFLOW_API_KEY', model: 'Qwen/Qwen2.5-7B-Instruct' },
+      deepseek: { keyEnv: 'DEEPSEEK_API_KEY', model: 'deepseek-chat' },
+      openai: { keyEnv: 'OPENAI_API_KEY', model: 'gpt-4o-mini' }
+    };
+    for (const [provider, spec] of Object.entries(envProviders)) {
+      const key = process.env[spec.keyEnv];
+      if (key) {
+        this.llmProvider = createLLMProvider({
+          provider,
+          apiKey: key,
+          model: spec.model
+        });
+        console.log(`[AI Guardian] Loaded LLM provider from ${spec.keyEnv}: ${provider}`);
+        return;
+      }
+    }
+
     try {
       const defaultProvider = llmConfigManager.getDefaultProvider();
       const config = llmConfigManager.getProviderConfig(defaultProvider);

@@ -12,6 +12,7 @@ import { MiMoFlashProvider } from './mimoflash.js';
 import { OllamaProvider } from './ollama.js';
 import { GeminiProvider } from './gemini.js';
 import { QwenProvider } from './qwen.js';
+import { SiliconFlowProvider } from './siliconflow.js';
 
 export * from './base.js';
 export { OpenAIProvider } from './openai.js';
@@ -21,6 +22,7 @@ export { MiMoFlashProvider } from './mimoflash.js';
 export { OllamaProvider } from './ollama.js';
 export { GeminiProvider } from './gemini.js';
 export { QwenProvider } from './qwen.js';
+export { SiliconFlowProvider } from './siliconflow.js';
 
 /**
  * 支持的提供商列表
@@ -32,6 +34,7 @@ export const SUPPORTED_PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', models: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'] },
   { id: 'qwen', name: 'Alibaba Qwen (通义千问)', models: ['qwen-max', 'qwen-plus', 'qwen-turbo'] },
   { id: 'mimoflash', name: '小米 MiMoFlash', models: ['mimoflash-v2', 'mimoflash-v1'] },
+  { id: 'siliconflow', name: 'SiliconFlow (硅基流动)', models: ['deepseek-ai/DeepSeek-V3.2', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen3-8B', 'Qwen/Qwen2.5-7B-Instruct', 'zai-org/GLM-4.5-Air'] },
   { id: 'ollama', name: 'Ollama (本地)', models: ['llama3', 'mistral', 'qwen2', 'gemma2'] }
 ] as const;
 
@@ -54,6 +57,8 @@ export function createLLMProvider(config: LLMConfig): BaseLLMProvider {
       return new QwenProvider(config);
     case 'mimoflash':
       return new MiMoFlashProvider(config);
+    case 'siliconflow':
+      return new SiliconFlowProvider(config);
     case 'ollama':
       return new OllamaProvider(config);
     default:

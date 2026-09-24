@@ -87,6 +87,19 @@ impl AppState {
                 healthy: Some(true),
             },
             LLMProvider {
+                id: "siliconflow".to_string(),
+                name: "SiliconFlow (硅基流动)".to_string(),
+                models: vec![
+                    "deepseek-ai/DeepSeek-V3.2".to_string(),
+                    "deepseek-ai/DeepSeek-R1".to_string(),
+                    "Qwen/Qwen3-8B".to_string(),
+                    "Qwen/Qwen2.5-7B-Instruct".to_string(),
+                    "zai-org/GLM-4.5-Air".to_string(),
+                ],
+                configured: false,
+                healthy: None,
+            },
+            LLMProvider {
                 id: "ollama".to_string(),
                 name: "Ollama (Local)".to_string(),
                 models: vec![
