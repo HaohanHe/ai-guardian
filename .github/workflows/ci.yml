@@ -273,8 +273,8 @@ jobs:
           cp artifacts/rust-windows-amd64/ai-guardian.exe "ai-guardian-${TAG}-windows-amd64.exe"
           chmod +x "ai-guardian-${TAG}-linux-amd64" "ai-guardian-${TAG}-linux-arm64"
 
-          # Node/TS 运行时整包
-          cp artifacts/node-dist/ai-guardian-node-dist.tar.gz "ai-guardian-node-${TAG}.tar.gz"
+          # Node/TS 运行时整包（artifact 下载后是解压目录，重新打包）
+          tar -czf "ai-guardian-node-${TAG}.tar.gz" -C artifacts/node-dist .
 
           # eBPF 对象
           cp artifacts/ebpf-object/ai_guardian.bpf.o "ai-guardian-${TAG}.bpf.o"
@@ -286,16 +286,16 @@ jobs:
           mkdir -p deb/DEBIAN deb/usr/bin
           cp artifacts/rust-linux-amd64/ai-guardian deb/usr/bin/ai-guardian
           chmod 755 deb/usr/bin/ai-guardian
-          cat > deb/DEBIAN/control <<EOF
-          Package: ai-guardian
-          Version: ${VER}
-          Section: utils
-          Priority: optional
-          Architecture: amd64
-          Maintainer: Haohan He <hehaohan@hsyscn.top>
-          Description: Runtime guard for AI coding agents
-           Watches AI agent processes and can suspend or stop them.
-          EOF
+          {
+            echo "Package: ai-guardian"
+            echo "Version: ${VER}"
+            echo "Section: utils"
+            echo "Priority: optional"
+            echo "Architecture: amd64"
+            echo "Maintainer: Haohan He <hehaohan@hsyscn.top>"
+            echo "Description: Runtime guard for AI coding agents"
+            echo " Watches AI agent processes and can suspend or stop them."
+          } > deb/DEBIAN/control
           dpkg-deb --build --root-owner-group deb "ai-guardian_${VER}_amd64.deb"
 
       - name: Create GitHub Release
