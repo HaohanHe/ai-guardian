@@ -277,7 +277,10 @@ jobs:
           grep -q '"decision":"allow"' /tmp/enf1.log
 
           if /tmp/guardfan/deny/true; then
-            echo "FAIL: denied binary was executed"; exit 1
+            echo "FAIL: denied binary was executed"
+            echo "----- last daemon decisions -----"
+            tail -30 /tmp/enf1.log
+            exit 1
           fi
 
           bash -c 'exec -a claude-code bash /tmp/fast-agent.sh' &
