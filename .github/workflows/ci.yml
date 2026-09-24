@@ -222,6 +222,19 @@ jobs:
           WD="$PWD"
           ENF="$WD/target/release/fanotify-enforcer"
 
+          # 失败时把守护进程日志打出来，便于定位
+          dump_logs() {
+            echo "===== enf1.log ====="; cat /tmp/enf1.log 2>/dev/null || true
+            echo "===== enf2.log ====="; cat /tmp/enf2.log 2>/dev/null || true
+          }
+          trap 'dump_logs' ERR
+
+          # 确定监听目标：根文件系统；/tmp 若在不同设备上则一并监听
+          WATCH=(--watch /)
+          if [ "$(stat -c %d /)" != "$(stat -c %d /tmp)" ]; then
+            WATCH+=(--watch /tmp)
+          fi
+
           mkdir -p /tmp/guardfan/deny
           cp /bin/true /tmp/guardfan/deny/true
 
@@ -242,14 +255,30 @@ jobs:
           chmod +x /tmp/fast-agent.sh
           : > /tmp/fast_damage.log
 
+          # 等守护进程就绪（日志出现 started），起不来就报错并打印日志
+          wait_ready() {
+            local logf=$1
+            for _ in $(seq 1 50); do
+              grep -q 'fanotify enforcer started' "$logf" && return 0
+              sleep 0.1
+            done
+            return 1
+          }
+
           # ---- 阶段 1：只启用 deny-prefix ----
-          sudo "$ENF" --deny-prefix /tmp/guardfan/deny \
+          : > /tmp/enf1.log
+          sudo "$ENF" "${WATCH[@]}" --deny-prefix /tmp/guardfan/deny \
             > /tmp/enf1.log 2>&1 &
-          sleep 1
+          wait_ready /tmp/enf1.log
+
+          # 自检：事件链路必须通（/bin/true 放行后日志里要有一条 JSON）
+          /bin/true
+          sleep 0.3
+          grep -q '"decision":"allow"' /tmp/enf1.log
+
           if /tmp/guardfan/deny/true; then
             echo "FAIL: denied binary was executed"; exit 1
           fi
-          /bin/true   # 非命中二进制正常执行
 
           bash -c 'exec -a claude-code bash /tmp/fast-agent.sh' &
           AG=$!
@@ -261,9 +290,11 @@ jobs:
           # ---- 阶段 2：重启并加入 agent lockdown ----
           sudo pkill -TERM -x fanotify-enforc
           sleep 1
-          sudo "$ENF" --deny-prefix /tmp/guardfan/deny --lockdown-agent claude-code \
+          : > /tmp/enf2.log
+          sudo "$ENF" "${WATCH[@]}" --deny-prefix /tmp/guardfan/deny \
+            --lockdown-agent claude-code \
             > /tmp/enf2.log 2>&1 &
-          sleep 1
+          wait_ready /tmp/enf2.log
           N2=$(wc -l < /tmp/fast_damage.log)
           sleep 3
           N3=$(wc -l < /tmp/fast_damage.log)
@@ -276,6 +307,7 @@ jobs:
           sudo pkill -TERM -x fanotify-enforc
           kill "$AG" 2>/dev/null || true
           rm -f /tmp/guard_pace.fifo
+          trap - ERR
           echo "fanotify enforcement test passed"
 
       - name: Upload enforcer binary

@@ -8,6 +8,7 @@
 //!   --lockdown-agent <PAT>    进程任一祖先的 cmdline 命中 → 拒绝（可重复）
 //!
 //! 需要 root（CAP_SYS_ADMIN）。每条裁决输出一行 JSON 审计日志。
+#![cfg(target_os = "linux")]
 
 use std::collections::HashSet;
 use std::ffi::CString;
@@ -19,14 +20,15 @@ use std::{fs, process};
 
 use libc::{
     c_void, fanotify_event_metadata, fanotify_init, fanotify_mark, fanotify_response, FAN_ALLOW,
-    FAN_CLASS_CONTENT, FAN_DENY, FAN_EVENT_ON_CHILD, FAN_MARK_ADD, FAN_MARK_FLUSH, FAN_MARK_MOUNT,
-    FAN_OPEN_EXEC_PERM, FAN_UNLIMITED_QUEUE, O_CLOEXEC, O_RDONLY,
+    FAN_CLASS_CONTENT, FAN_DENY, FAN_EVENT_ON_CHILD, FAN_MARK_ADD, FAN_MARK_FILESYSTEM,
+    FAN_MARK_FLUSH, FAN_MARK_MOUNT, FAN_OPEN_EXEC_PERM, FAN_UNLIMITED_QUEUE, O_CLOEXEC, O_RDONLY,
 };
 
 #[derive(Default)]
 struct Policy {
     deny_prefixes: Vec<String>,
     lockdown_agents: Vec<String>,
+    watch_paths: Vec<String>,
 }
 
 enum Decision {
@@ -112,8 +114,16 @@ fn parse_args() -> Policy {
                     policy.lockdown_agents.push(v.to_lowercase());
                 }
             }
+            "--watch" => {
+                if let Some(v) = args.next() {
+                    policy.watch_paths.push(v);
+                }
+            }
             other => eprintln!("ignoring unknown argument: {other}"),
         }
+    }
+    if policy.watch_paths.is_empty() {
+        policy.watch_paths.push("/".to_string());
     }
     policy
 }
@@ -132,8 +142,8 @@ fn fan_fd() -> io::Result<RawFd> {
     Ok(fd)
 }
 
-fn mark_mount(fd: RawFd, mount: &str, mask: u64, flags: u32) -> io::Result<()> {
-    let path = CString::new(mount.as_bytes()).unwrap();
+fn mark(fd: RawFd, target: &str, mask: u64, flags: u32) -> io::Result<()> {
+    let path = CString::new(target).unwrap();
     let rc = unsafe { fanotify_mark(fd, flags, mask, libc::AT_FDCWD, path.as_ptr()) };
     if rc < 0 {
         return Err(io::Error::last_os_error());
@@ -174,18 +184,20 @@ fn main() -> anyhow::Result<()> {
     }
     let policy = parse_args();
     let fan = fan_fd()?;
-    mark_mount(
-        fan,
-        "/",
-        FAN_OPEN_EXEC_PERM | FAN_EVENT_ON_CHILD,
-        FAN_MARK_ADD | FAN_MARK_MOUNT,
-    )?;
-    eprintln!("fanotify enforcer started: watching exec on / mount");
+    let mask = FAN_OPEN_EXEC_PERM | FAN_EVENT_ON_CHILD;
+    for path in &policy.watch_paths {
+        // 同一文件系统内，MOUNT 标记覆盖该挂载点，FILESYSTEM 标记覆盖整个文件系统
+        mark(fan, path, mask, FAN_MARK_ADD | FAN_MARK_MOUNT)?;
+        mark(fan, path, mask, FAN_MARK_ADD | FAN_MARK_FILESYSTEM)?;
+        eprintln!("fanotify enforcer: watching exec under {path}");
+    }
+    eprintln!("fanotify enforcer started");
 
     // 用 sigwait 在独立线程收 SIGTERM/SIGINT，收到后清标记再退出
     let stop = Arc::new(AtomicBool::new(false));
     {
         let stop = stop.clone();
+        let watch = policy.watch_paths.clone();
         std::thread::spawn(move || {
             let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
             unsafe {
@@ -197,7 +209,10 @@ fn main() -> anyhow::Result<()> {
                 libc::sigwait(&set, &mut sig);
             }
             stop.store(true, Ordering::SeqCst);
-            let _ = mark_mount(fan, "/", 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
+            for path in &watch {
+                let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
+                let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_FILESYSTEM);
+            }
             unsafe { libc::close(fan) };
             process::exit(0);
         });
@@ -261,8 +276,11 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // 退出前清掉挂载标记，避免遗留裁决点
-    let _ = mark_mount(fan, "/", 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
+    // 退出前清掉标记，避免遗留裁决点
+    for path in &policy.watch_paths {
+        let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
+        let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_FILESYSTEM);
+    }
     unsafe { libc::close(fan) };
     eprintln!("fanotify enforcer stopped: allowed={allowed} denied={denied}");
     Ok(())
