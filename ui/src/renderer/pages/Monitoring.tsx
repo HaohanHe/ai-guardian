@@ -25,7 +25,7 @@ interface Process {
 }
 
 const Monitoring: React.FC = () => {
-  const [processes, setProcesses] = useState<Process[]>([
+  const [processes] = useState<Process[]>([
     { id: '1', pid: 1234, name: 'node', command: 'node server.js', status: 'running', riskScore: 15, eventsCount: 45 },
     { id: '2', pid: 5678, name: 'python', command: 'python app.py', status: 'running', riskScore: 25, eventsCount: 23 },
     { id: '3', pid: 9012, name: 'bash', command: 'bash script.sh', status: 'running', riskScore: 85, eventsCount: 12 },

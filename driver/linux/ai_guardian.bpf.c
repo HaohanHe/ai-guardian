@@ -12,6 +12,21 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
+/* 兼容性常量：vmlinux.h 不一定导出 errno 值与地址族 */
+#ifndef EPERM
+#define EPERM 1
+#endif
+#ifndef AF_INET
+#define AF_INET 2
+#endif
+
+/* 兼容旧版 libbpf：bpf_strncmp 为 helper id 165（内核 5.13+） */
+#ifndef bpf_strncmp
+static long (*bpf_strncmp_compat)(const void *buf, __u32 size, const void *str)
+    = (void *)165;
+#define bpf_strncmp bpf_strncmp_compat
+#endif
+
 #define AI_GUARDIAN_MAX_PROCESSES 1024
 #define PATH_MAX 256
 #define TASK_COMM_LEN 16
@@ -208,6 +223,7 @@ int trace_openat_enter(struct trace_event_raw_sys_enter *ctx)
     int dfd = ctx->args[0];
     const char *filename = (const char *)ctx->args[1];
     int flags = ctx->args[2];
+    (void)dfd; /* openat 目录 fd，路径解析暂未使用 */
     
     char path[PATH_MAX];
     bpf_probe_read_user_str(&path, sizeof(path), filename);

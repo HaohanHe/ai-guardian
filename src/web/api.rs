@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use super::routes;
 use super::state::AppState;
@@ -26,7 +25,7 @@ impl ApiServer {
         let app = routes::create_router(self.state);
 
         log::info!("🚀 AI Guardian API Server starting on http://{}", addr);
-        
+
         let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
 

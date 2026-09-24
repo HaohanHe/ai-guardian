@@ -1,8 +1,6 @@
-use std::sync::Arc;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
-use chrono::{DateTime, Utc};
 
 use super::types::*;
 
@@ -37,14 +35,22 @@ impl AppState {
             LLMProvider {
                 id: "openai".to_string(),
                 name: "OpenAI".to_string(),
-                models: vec!["gpt-4".to_string(), "gpt-4-turbo".to_string(), "gpt-3.5-turbo".to_string()],
+                models: vec![
+                    "gpt-4".to_string(),
+                    "gpt-4-turbo".to_string(),
+                    "gpt-3.5-turbo".to_string(),
+                ],
                 configured: false,
                 healthy: None,
             },
             LLMProvider {
                 id: "anthropic".to_string(),
                 name: "Anthropic".to_string(),
-                models: vec!["claude-3-opus".to_string(), "claude-3-sonnet".to_string(), "claude-3-haiku".to_string()],
+                models: vec![
+                    "claude-3-opus".to_string(),
+                    "claude-3-sonnet".to_string(),
+                    "claude-3-haiku".to_string(),
+                ],
                 configured: false,
                 healthy: None,
             },
@@ -65,7 +71,11 @@ impl AppState {
             LLMProvider {
                 id: "qwen".to_string(),
                 name: "通义千问".to_string(),
-                models: vec!["qwen-turbo".to_string(), "qwen-plus".to_string(), "qwen-max".to_string()],
+                models: vec![
+                    "qwen-turbo".to_string(),
+                    "qwen-plus".to_string(),
+                    "qwen-max".to_string(),
+                ],
                 configured: false,
                 healthy: None,
             },
@@ -79,7 +89,11 @@ impl AppState {
             LLMProvider {
                 id: "ollama".to_string(),
                 name: "Ollama (Local)".to_string(),
-                models: vec!["llama2".to_string(), "codellama".to_string(), "mistral".to_string()],
+                models: vec![
+                    "llama2".to_string(),
+                    "codellama".to_string(),
+                    "mistral".to_string(),
+                ],
                 configured: false,
                 healthy: None,
             },
@@ -106,7 +120,10 @@ impl AppState {
         } else {
             stats.allowed_events += 1;
         }
-        *stats.events_by_type.entry(event_type.to_string()).or_insert(0) += 1;
+        *stats
+            .events_by_type
+            .entry(event_type.to_string())
+            .or_insert(0) += 1;
     }
 }
 

@@ -13,10 +13,10 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(9876);
 
     let server = ApiServer::new(port);
-    
+
     log::info!("Starting API server on port {}", port);
-    
-    server.start().await?;
+
+    server.start().await.map_err(anyhow::Error::from_boxed)?;
 
     log::info!("AI Guardian stopped.");
     Ok(())

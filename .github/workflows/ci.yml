@@ -2,669 +2,297 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
+    tags: ['v*']
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一 ref 的新运行取消旧运行，省额度（tag 发布不受影响：tag 名唯一）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
-permissions:
-  contents: read
-  packages: read
-
 jobs:
-  # 代码质量检查
-  code-quality:
-    name: Code Quality
+  # =========================================================
+  # Node / TypeScript：当前主要维护的运行时（含 Linux 实时防御）
+  # =========================================================
+  node-ci:
+    name: Node CI (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        components: rustfmt, clippy
-
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-
-    - name: Check Rust formatting
-      run: cargo fmt -- --check
-
-    - name: Run Rust clippy
-      run: cargo clippy -- -D warnings
-      continue-on-error: true
-
-    - name: Check if UI exists
-      id: check-ui
-      run: |
-        if [ -d "ui" ] && [ -f "ui/package.json" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-      shell: bash
-
-    - name: Setup Node.js
-      if: steps.check-ui.outputs.exists == 'true'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
-        cache-dependency-path: 'ui/package-lock.json'
-
-    - name: Install UI dependencies
-      if: steps.check-ui.outputs.exists == 'true'
-      run: |
-        cd ui
-        npm install
-
-    - name: Check UI code style
-      if: steps.check-ui.outputs.exists == 'true'
-      run: |
-        cd ui
-        npm run lint
-      continue-on-error: true
-
-  # Rust 核心构建和测试
-  rust-build-amd64:
-    name: Rust Build (amd64)
-    needs: code-quality
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
     strategy:
+      fail-fast: false
       matrix:
-        rust: [stable]
+        node: ['18', '20', '22']
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
 
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update || true
-        sudo apt-get install -y libelf-dev libbpf-dev linux-headers-generic
-      continue-on-error: false
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
+      - name: Type check
+        run: npx tsc --noEmit
 
-    - name: Build Rust core
-      run: cargo build --release --verbose
+      - name: Unit tests
+        run: npx vitest run
 
-    - name: Run Rust tests
-      run: cargo test --verbose
+      - name: Build
+        run: npm run build
 
-    - name: Upload Rust artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: rust-binary-amd64
-        path: target/release/ai-guardian
+      - name: Package built runtime (Node 20 only)
+        if: matrix.node == '20'
+        run: tar -czf ai-guardian-node-dist.tar.gz -C dist .
 
-  rust-build-arm64:
-    name: Rust Build (arm64)
-    needs: code-quality
+      - name: Upload runtime artifact (Node 20 only)
+        if: matrix.node == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-dist
+          path: ai-guardian-node-dist.tar.gz
+          if-no-files-found: error
+
+  # =========================================================
+  # Rust 质量门：格式 + clippy
+  # =========================================================
+  rust-quality:
+    name: Rust Quality
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: aarch64-unknown-linux-gnu
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-    - name: Install cross compilation toolchain
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - name: Check formatting
+        run: cargo fmt --check
 
-    - name: Configure cross compilation
-      run: |
-        mkdir -p ~/.cargo
-        echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
-        echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update || true
-        sudo apt-get install -y libelf-dev libbpf-dev linux-headers-generic
-      continue-on-error: false
+      - name: Clippy (-D warnings)
+        run: cargo clippy --release -- -D warnings
 
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-
-    - name: Build Rust core
-      run: cargo build --release --target aarch64-unknown-linux-gnu --verbose
-
-    - name: Upload Rust artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: rust-binary-arm64
-        path: target/aarch64-unknown-linux-gnu/release/ai-guardian
-
-  # Windows Rust 构建
-  rust-build-windows:
-    name: Rust Build (Windows)
-    needs: code-quality
-    runs-on: windows-latest
-    permissions:
-      contents: read
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: false
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-
-    - name: Build Rust core
-      run: cargo build --release --verbose
-
-    - name: Run Rust tests
-      run: cargo test --verbose
-      continue-on-error: true
-
-    - name: Upload Rust artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: rust-binary-windows
-        path: target/release/ai-guardian.exe
-
-  # Windows 驱动构建（仅在手动触发时运行）
-  windows-driver:
-    name: Windows Driver Build
-    runs-on: windows-latest
-    needs: rust-build-amd64
-    permissions:
-      contents: read
-    if: github.event_name == 'workflow_dispatch'
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Setup Windows Driver Kit
-      run: |
-        choco install windowsdriverkit10 --version 10.0.22621.2428
-      continue-on-error: true
-
-    - name: Build Windows Driver
-      shell: powershell
-      run: |
-        cd driver/windows
-        if (Test-Path build.bat) {
-          .\build.bat
-        } else {
-          Write-Host "Warning: build.bat not found, skipping driver build"
-        }
-      continue-on-error: true
-
-    - name: Upload Driver artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-driver
-        path: |
-          driver/windows/build/
-        if-no-files-found: ignore
-
-  # Linux eBPF 构建
-  linux-ebpf:
-    name: Linux eBPF Build
-    runs-on: ubuntu-latest
-    needs: rust-build-amd64
-    permissions:
-      contents: read
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update || true
-        sudo apt-get install -y llvm clang libbpf-dev linux-headers-generic
-
-    - name: Cache eBPF build
-      uses: actions/cache@v4
-      with:
-        path: driver/linux/*.o
-        key: ${{ runner.os }}-ebpf-${{ hashFiles('driver/linux/*.c') }}
-
-    - name: Build eBPF programs
-      run: |
-        cd driver/linux
-        make clean
-        SKIP_EBPF_BUILD=yes make || echo "eBPF build skipped (CI environment)"
-
-    - name: Upload eBPF artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-ebpf
-        path: |
-          driver/linux/*.o
-        if-no-files-found: warn
-
-  # Electron UI 构建
-  electron-build:
-    name: Electron UI Build
-    needs: code-quality
+  # =========================================================
+  # Rust 构建：Linux amd64 / arm64 / Windows
+  # =========================================================
+  rust-build:
+    name: Rust Build (${{ matrix.name-suffix }})
+    needs: rust-quality
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [20.x]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: target/release/ai-guardian
+            name-suffix: linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: target/aarch64-unknown-linux-gnu/release/ai-guardian
+            name-suffix: linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: target/release/ai-guardian.exe
+            name-suffix: windows-amd64
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: 'ui/package-lock.json'
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-    - name: Check if UI exists
-      id: check-ui
-      run: |
-        if [ -d "ui" ] && [ -f "ui/package.json" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-      shell: bash
+      - name: Install aarch64 cross toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          mkdir -p .cargo
+          printf '[target.aarch64-unknown-linux-gnu]\nlinker = "aarch64-linux-gnu-gcc"\n' \
+            >> .cargo/config.toml
 
-    - name: Install UI dependencies
-      if: steps.check-ui.outputs.exists == 'true'
-      run: |
-        cd ui
-        npm install
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
-    - name: Build Electron UI
-      if: steps.check-ui.outputs.exists == 'true'
-      run: |
-        cd ui
-        npm run build
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
-    - name: Run UI tests
-      if: steps.check-ui.outputs.exists == 'true'
-      run: |
-        cd ui
-        npm test
-      continue-on-error: true
+      - name: Test (linux amd64)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo test --release
 
-    - name: Upload UI artifacts
-      if: steps.check-ui.outputs.exists == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: electron-ui-${{ matrix.os }}
-        path: |
-          ui/dist/
-          ui/release/
-        if-no-files-found: ignore
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-${{ matrix.name-suffix }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
 
-  # 安全检查
-  security-audit:
-    name: Security Audit
+  # =========================================================
+  # eBPF：真实编译骨架为 BPF 对象（CORE：只需 BTF + libbpf 头）
+  # =========================================================
+  ebpf:
+    name: eBPF Compile
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      - name: Install clang / libbpf / bpftool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libbpf-dev bpftool || \
+            sudo apt-get install -y clang libbpf-dev linux-tools-generic
 
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
+      - name: Build eBPF object
+        run: make -C driver/linux LINUX_HEADERS=/usr
 
-    - name: Cache cargo tools
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/bin/cargo-audit
-        key: ${{ runner.os }}-cargo-audit
+      - name: Upload eBPF object
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-object
+          path: driver/linux/ai_guardian.bpf.o
+          if-no-files-found: error
 
-    - name: Install cargo-audit
-      run: |
-        if ! command -v cargo-audit &> /dev/null; then
-          cargo install cargo-audit
-        fi
+  # =========================================================
+  # Electron UI：lint / test / build（产物落在根 dist/main、dist/renderer）
+  # =========================================================
+  ui:
+    name: Electron UI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
-    - name: Run cargo audit
-      run: cargo audit
-      continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Cache cargo-deny
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/bin/cargo-deny
-        key: ${{ runner.os }}-cargo-deny
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
-    - name: Install cargo-deny
-      run: |
-        if ! command -v cargo-deny &> /dev/null; then
-          cargo install cargo-deny
-        fi
+      - name: Install dependencies
+        working-directory: ui
+        run: npm ci
 
-    - name: Run cargo deny
-      run: |
-        if [ -f deny.toml ]; then
-          cargo deny check
-        else
-          echo "Warning: deny.toml not found, skipping cargo deny check"
-        fi
-      continue-on-error: true
+      - name: Lint
+        working-directory: ui
+        run: npm run lint
 
-  ## 发布 Release
+      - name: Test
+        working-directory: ui
+        run: npm test -- --run
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
+
+      - name: Upload UI build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-${{ matrix.os }}
+          path: |
+            dist/main
+            dist/renderer
+          if-no-files-found: error
+
+  # =========================================================
+  # CD：打 v* tag 时创建 GitHub Release（预发布）
+  # =========================================================
   release:
     name: Create Release
-    needs: [rust-build-amd64, rust-build-arm64, rust-build-windows, linux-ebpf, electron-build]
+    needs: [node-ci, rust-build, ebpf, ui]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Generate version
-      id: version
-      run: |
-        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-        VERSION="$(date +%Y%m%d)-${{ github.run_number }}-${SHORT_SHA}"
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Generated version: $VERSION"
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+      - name: Prepare versioned files
+        run: |
+          set -euxo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
 
-    - name: Create Release Package
-      run: |
-        mkdir -p release
-        cp -r artifacts/* release/ || true
-        tar -czf ai-guardian-release.tar.gz release/
+          # 原生二进制（平台后缀）
+          cp artifacts/rust-linux-amd64/ai-guardian "ai-guardian-${TAG}-linux-amd64"
+          cp artifacts/rust-linux-arm64/ai-guardian "ai-guardian-${TAG}-linux-arm64"
+          cp artifacts/rust-windows-amd64/ai-guardian.exe "ai-guardian-${TAG}-windows-amd64.exe"
+          chmod +x "ai-guardian-${TAG}-linux-amd64" "ai-guardian-${TAG}-linux-arm64"
 
-    - name: Build Debian Package (amd64)
-      run: |
-        # 创建 deb 包目录结构
-        mkdir -p debian/ai-guardian/DEBIAN
-        mkdir -p debian/ai-guardian/usr/bin
-        mkdir -p debian/ai-guardian/etc/ai-guardian
-        mkdir -p debian/ai-guardian/lib/systemd/system
+          # Node/TS 运行时整包
+          cp artifacts/node-dist/ai-guardian-node-dist.tar.gz "ai-guardian-node-${TAG}.tar.gz"
 
-        # 复制 amd64 二进制文件
-        cp artifacts/rust-binary-amd64/ai-guardian debian/ai-guardian/usr/bin/ai-guardian || true
-        chmod +x debian/ai-guardian/usr/bin/ai-guardian || true
+          # eBPF 对象
+          cp artifacts/ebpf-object/ai_guardian.bpf.o "ai-guardian-${TAG}.bpf.o"
 
-        # 创建控制文件
-        echo "Package: ai-guardian" > debian/ai-guardian/DEBIAN/control
-        echo "Version: ${{ steps.version.outputs.version }}" >> debian/ai-guardian/DEBIAN/control
-        echo "Section: utils" >> debian/ai-guardian/DEBIAN/control
-        echo "Priority: optional" >> debian/ai-guardian/DEBIAN/control
-        echo "Architecture: amd64" >> debian/ai-guardian/DEBIAN/control
-        echo "Depends: libelf1, libbpf0" >> debian/ai-guardian/DEBIAN/control
-        echo "Maintainer: AI Guardian Team <team@ai-guardian.dev>" >> debian/ai-guardian/DEBIAN/control
-        echo "Description: AI Guardian - System-Level EDR for AI Agents" >> debian/ai-guardian/DEBIAN/control
-        echo " AI Guardian is a system-level EDR for protecting AI Agents." >> debian/ai-guardian/DEBIAN/control
+          # UI 构建整包
+          tar -czf "ai-guardian-ui-${TAG}.tar.gz" -C artifacts/ui-ubuntu-latest .
 
-        # 创建 postinst 脚本
-        echo '#!/bin/bash' > debian/ai-guardian/DEBIAN/postinst
-        echo 'set -e' >> debian/ai-guardian/DEBIAN/postinst
-        echo '' >> debian/ai-guardian/DEBIAN/postinst
-        echo 'if ! id -u ai-guardian > /dev/null 2>&1; then' >> debian/ai-guardian/DEBIAN/postinst
-        echo '    useradd -r -s /bin/false ai-guardian' >> debian/ai-guardian/DEBIAN/postinst
-        echo 'fi' >> debian/ai-guardian/DEBIAN/postinst
-        echo '' >> debian/ai-guardian/DEBIAN/postinst
-        echo 'chown -R ai-guardian:ai-guardian /etc/ai-guardian' >> debian/ai-guardian/DEBIAN/postinst
-        echo '' >> debian/ai-guardian/DEBIAN/postinst
-        echo 'echo "AI Guardian installed successfully!"' >> debian/ai-guardian/DEBIAN/postinst
-        chmod 755 debian/ai-guardian/DEBIAN/postinst
+          # Debian 包（amd64）
+          mkdir -p deb/DEBIAN deb/usr/bin
+          cp artifacts/rust-linux-amd64/ai-guardian deb/usr/bin/ai-guardian
+          chmod 755 deb/usr/bin/ai-guardian
+          cat > deb/DEBIAN/control <<EOF
+          Package: ai-guardian
+          Version: ${VER}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Haohan He <hehaohan@hsyscn.top>
+          Description: Runtime guard for AI coding agents
+           Watches AI agent processes and can suspend or stop them.
+          EOF
+          dpkg-deb --build --root-owner-group deb "ai-guardian_${VER}_amd64.deb"
 
-        # 构建 deb 包
-        dpkg-deb --build debian/ai-guardian
-        mv debian/ai-guardian.deb ai-guardian-${{ steps.version.outputs.version }}-amd64.deb
-
-    - name: Build Debian Package (arm64)
-      run: |
-        # 创建 deb 包目录结构
-        mkdir -p debian/ai-guardian-arm64/DEBIAN
-        mkdir -p debian/ai-guardian-arm64/usr/bin
-        mkdir -p debian/ai-guardian-arm64/etc/ai-guardian
-        mkdir -p debian/ai-guardian-arm64/lib/systemd/system
-
-        # 复制 arm64 二进制文件
-        cp artifacts/rust-binary-arm64/ai-guardian debian/ai-guardian-arm64/usr/bin/ai-guardian || true
-        chmod +x debian/ai-guardian-arm64/usr/bin/ai-guardian || true
-
-        # 创建控制文件
-        echo "Package: ai-guardian" > debian/ai-guardian-arm64/DEBIAN/control
-        echo "Version: ${{ steps.version.outputs.version }}" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo "Section: utils" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo "Priority: optional" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo "Architecture: arm64" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo "Depends: libelf1, libbpf0" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo "Maintainer: AI Guardian Team <team@ai-guardian.dev>" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo "Description: AI Guardian - System-Level EDR for AI Agents" >> debian/ai-guardian-arm64/DEBIAN/control
-        echo " AI Guardian is a system-level EDR for protecting AI Agents." >> debian/ai-guardian-arm64/DEBIAN/control
-
-        # 创建 postinst 脚本
-        echo '#!/bin/bash' > debian/ai-guardian-arm64/DEBIAN/postinst
-        echo 'set -e' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo '' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo 'if ! id -u ai-guardian > /dev/null 2>&1; then' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo '    useradd -r -s /bin/false ai-guardian' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo 'fi' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo '' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo 'chown -R ai-guardian:ai-guardian /etc/ai-guardian' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo '' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        echo 'echo "AI Guardian installed successfully!"' >> debian/ai-guardian-arm64/DEBIAN/postinst
-        chmod 755 debian/ai-guardian-arm64/DEBIAN/postinst
-
-        # 构建 deb 包
-        dpkg-deb --build debian/ai-guardian-arm64
-        mv debian/ai-guardian-arm64.deb ai-guardian-${{ steps.version.outputs.version }}-arm64.deb
-
-    - name: Upload Debian Packages
-      uses: actions/upload-artifact@v4
-      with:
-        name: debian-packages
-        path: ai-guardian-*.deb
-
-    - name: Create Windows Package
-      run: |
-        mkdir -p windows-package
-        
-        # 复制 Windows exe 文件
-        if [ -f artifacts/rust-binary-windows/ai-guardian.exe ]; then
-          cp artifacts/rust-binary-windows/ai-guardian.exe windows-package/
-          echo "✅ Windows exe found and copied"
-        else
-          echo "❌ Windows exe not found, creating placeholder"
-          echo "Windows build may have failed" > windows-package/BUILD_FAILED.txt
-        fi
-        
-        # 复制完整的安装脚本
-        if [ -f driver/windows/install-driver.ps1 ]; then
-          cp driver/windows/install-driver.ps1 windows-package/
-          cp driver/windows/uninstall-driver.ps1 windows-package/
-          echo "✅ Driver scripts copied"
-        else
-          echo "⚠️ Driver scripts not found, creating basic version"
-          cat > windows-package/install-driver.ps1 << 'EOF'
-        param([switch]$Force, [switch]$SkipTestSign)
-
-        $ErrorActionPreference = "Stop"
-        $ProgressPreference = "SilentlyContinue"
-
-        $DriverName = "AiGuardianDriver"
-
-        function Write-Log {
-            param([string]$Message, [string]$Level = "INFO")
-            $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-            $color = switch ($Level) {
-                "ERROR" { "Red" }
-                "WARN" { "Yellow" }
-                "SUCCESS" { "Green" }
-                default { "White" }
-            }
-            Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
-        }
-
-        Write-Host ""
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "  AI Guardian Driver Installer" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-
-        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
-        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
-        if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-            Write-Log "This script requires Administrator privileges" "ERROR"
-            exit 1
-        }
-
-        Write-Log "Enabling test signing mode..."
-        bcdedit /set testsigning on
-
-        Write-Log "Driver installation complete!" "SUCCESS"
-        Write-Host ""
-        EOF
-        fi
-        
-        # 复制驱动文件
-        if [ -d driver/windows/AiGuardianDriver ]; then
-          mkdir -p windows-package/driver
-          cp -r driver/windows/AiGuardianDriver windows-package/driver/
-          echo "✅ Driver files copied"
-        fi
-        
-        # 创建 README
-        cat > windows-package/README.txt << 'EOF'
-        AI Guardian V2 - Windows Version
-        ================================
-        
-        Requirements:
-        - Windows 10/11 x64
-        - Administrator privileges
-        - Test mode enabled (for unsigned driver)
-        
-        Installation:
-        1. Run install-driver.ps1 as Administrator
-           PowerShell -ExecutionPolicy Bypass -File install-driver.ps1
-        2. Reboot computer (if prompted)
-        3. Run ai-guardian.exe
-        
-        Uninstallation:
-        1. Run uninstall-driver.ps1 as Administrator
-           PowerShell -ExecutionPolicy Bypass -File uninstall-driver.ps1
-        
-        Note: The driver is currently unsigned. You need to enable
-        Windows test mode or sign the driver with a valid certificate.
-        EOF
-        
-        # 创建快速启动脚本
-        cat > windows-package/start.bat << 'EOF'
-        @echo off
-        echo Starting AI Guardian...
-        start "" ai-guardian.exe
-        EOF
-        
-        # 打包 Windows 版本
-        cd windows-package
-        zip -r ../ai-guardian-${{ steps.version.outputs.version }}-windows.zip .
-        cd ..
-
-    - name: Upload Windows Package
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-package
-        path: ai-guardian-*-windows.zip
-
-    - name: Create GitHub Release
-      run: |
-        gh release create ${{ steps.version.outputs.version }} \
-          --title "AI Guardian V2 Release ${{ steps.version.outputs.version }}" \
-          --notes "## AI Guardian V2 Release
-
-        ### 版本信息
-        - 版本号: ${{ steps.version.outputs.version }}
-        - 提交: ${{ github.sha }}
-        - 构建时间: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-
-        ### 包含内容
-        - Rust 核心引擎 (Windows/Linux/macOS)
-        - Linux eBPF 程序
-        - Electron UI
-        - Debian 安装包 (.deb)
-
-        ### 安装说明
-
-        #### Linux (Debian/Ubuntu)
-        ```bash
-        sudo dpkg -i ai-guardian-*.deb
-        sudo apt-get install -f  # 修复依赖
-        sudo ai-guardian
-        ```
-
-        #### 其他 Linux 发行版
-        1. 下载 tar.gz 包
-        2. 解压并运行 `./ai-guardian`
-
-        #### Windows
-        1. 下载 .exe 文件
-        2. 运行 install-driver.ps1 安装驱动（如需要）
-        3. 运行 ai-guardian.exe
-
-        #### macOS
-        1. 下载二进制文件
-        2. 运行 `./ai-guardian`
-
-        ### 注意事项
-        - Windows 需要启用测试模式或签名驱动
-        - Linux 需要 root 权限
-        - 首次运行请查看配置文档" \
-          --prerelease \
-          ai-guardian-release.tar.gz \
-          ai-guardian-*.deb \
-          ai-guardian-*-windows.zip || true
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "${TAG}" \
+            --title "AI Guardian ${TAG}" \
+            --generate-notes \
+            --prerelease \
+            "ai-guardian-${TAG}-linux-amd64" \
+            "ai-guardian-${TAG}-linux-arm64" \
+            "ai-guardian-${TAG}-windows-amd64.exe" \
+            "ai-guardian-node-${TAG}.tar.gz" \
+            "ai-guardian-${TAG}.bpf.o" \
+            "ai-guardian-ui-${TAG}.tar.gz" \
+            "ai-guardian_${TAG#v}_amd64.deb"

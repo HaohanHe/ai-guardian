@@ -1,12 +1,10 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
     Json,
 };
+use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
-use uuid::Uuid;
-use chrono::Utc;
 
 use super::state::AppState;
 use super::types::*;
@@ -64,9 +62,7 @@ pub async fn reset_config(State(state): State<AppState>) -> Json<ApiResponse<Con
     Json(ApiResponse::success(config.clone()))
 }
 
-pub async fn validate_config(
-    Json(config): Json<Config>,
-) -> Json<ApiResponse<ValidationResult>> {
+pub async fn validate_config(Json(config): Json<Config>) -> Json<ApiResponse<ValidationResult>> {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
 
@@ -110,10 +106,10 @@ pub async fn add_ai_terminal(
     terminal.is_tracked = true;
     terminal.start_time = Utc::now();
     terminal.last_activity = Utc::now();
-    
+
     let mut terminals = state.ai_terminals.write();
     terminals.push(terminal.clone());
-    
+
     Json(ApiResponse::success(terminal))
 }
 
@@ -126,7 +122,9 @@ pub async fn remove_ai_terminal(
     Json(ApiResponse::success(()))
 }
 
-pub async fn refresh_ai_terminals(State(state): State<AppState>) -> Json<ApiResponse<Vec<AITerminal>>> {
+pub async fn refresh_ai_terminals(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<AITerminal>>> {
     let terminals = state.ai_terminals.read().clone();
     Json(ApiResponse::success(terminals))
 }
@@ -136,7 +134,7 @@ pub async fn get_audit_logs(
     Query(query): Query<AuditLogQuery>,
 ) -> Json<ApiResponse<Vec<AuditLog>>> {
     let logs = state.audit_logs.read();
-    
+
     let filtered: Vec<AuditLog> = logs
         .iter()
         .filter(|log| {
@@ -156,7 +154,11 @@ pub async fn get_audit_logs(
                 }
             }
             if let Some(ref name) = query.process_name {
-                if !log.process_name.to_lowercase().contains(&name.to_lowercase()) {
+                if !log
+                    .process_name
+                    .to_lowercase()
+                    .contains(&name.to_lowercase())
+                {
                     return false;
                 }
             }
@@ -166,7 +168,7 @@ pub async fn get_audit_logs(
         .take(query.limit)
         .cloned()
         .collect();
-    
+
     Json(ApiResponse::success(filtered))
 }
 
@@ -175,7 +177,7 @@ pub async fn export_audit_logs(
     Path(format): Path<String>,
 ) -> Json<ApiResponse<String>> {
     let logs = state.audit_logs.read();
-    
+
     let content = match format.as_str() {
         "json" => serde_json::to_string_pretty(&*logs).unwrap_or_default(),
         "csv" => {
@@ -198,7 +200,7 @@ pub async fn export_audit_logs(
         }
         _ => return Json(ApiResponse::error("不支持的导出格式")),
     };
-    
+
     Json(ApiResponse::success(content))
 }
 
@@ -212,11 +214,11 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<ApiResponse<Stats>
     let mut stats = state.stats.read().clone();
     stats.uptime = state.get_uptime();
     stats.ai_terminals_count = state.ai_terminals.read().len() as u32;
-    
+
     if stats.total_events > 0 {
         stats.average_risk_score = 35.0 + (rand_random() * 30.0);
     }
-    
+
     Json(ApiResponse::success(stats))
 }
 
@@ -234,13 +236,15 @@ pub async fn get_driver_status(State(state): State<AppState>) -> Json<ApiRespons
     Json(ApiResponse::success(status))
 }
 
-pub async fn install_driver(State(state): State<AppState>) -> Json<ApiResponse<HashMap<&'static str, bool>>> {
+pub async fn install_driver(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<HashMap<&'static str, bool>>> {
     let mut status = state.driver_status.write();
     status.installed = true;
     status.loaded = true;
     status.version = Some("2.0.0".to_string());
     status.signing_status = "test-signed".to_string();
-    
+
     let mut result = HashMap::new();
     result.insert("requiresReboot", false);
     Json(ApiResponse::success(result))
@@ -252,7 +256,9 @@ pub async fn uninstall_driver(State(state): State<AppState>) -> Json<ApiResponse
     Json(ApiResponse::success(()))
 }
 
-pub async fn get_llm_providers(State(state): State<AppState>) -> Json<ApiResponse<Vec<LLMProvider>>> {
+pub async fn get_llm_providers(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<LLMProvider>>> {
     let providers = state.llm_providers.read().clone();
     Json(ApiResponse::success(providers))
 }
@@ -265,7 +271,7 @@ pub async fn test_llm_connection(
     if let Some(provider) = providers.iter_mut().find(|p| p.id == provider_id) {
         provider.healthy = Some(true);
     }
-    
+
     let mut result = HashMap::new();
     result.insert("success", true);
     Json(ApiResponse::success(result))

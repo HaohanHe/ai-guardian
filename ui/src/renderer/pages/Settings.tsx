@@ -5,7 +5,6 @@ import {
   CpuChipIcon,
   BellIcon,
   DocumentTextIcon,
-  GlobeAltIcon,
   CogIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,

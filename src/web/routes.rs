@@ -1,5 +1,5 @@
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, post},
     Router,
 };
 use tower_http::cors::{Any, CorsLayer};
@@ -10,9 +10,15 @@ use super::state::AppState;
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
-        .route("/api/config", get(get_config).put(update_config).post(reset_config))
+        .route(
+            "/api/config",
+            get(get_config).put(update_config).post(reset_config),
+        )
         .route("/api/config/validate", post(validate_config))
-        .route("/api/terminals", get(get_ai_terminals).post(add_ai_terminal))
+        .route(
+            "/api/terminals",
+            get(get_ai_terminals).post(add_ai_terminal),
+        )
         .route("/api/terminals/refresh", post(refresh_ai_terminals))
         .route("/api/terminals/:pid", delete(remove_ai_terminal))
         .route("/api/audit/logs", get(get_audit_logs))

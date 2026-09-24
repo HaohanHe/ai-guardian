@@ -159,10 +159,10 @@ export interface LogEntry {
 }
 
 // 错误处理包装器
-async function wrapWithErrorHandler<T extends (...args: unknown[]) => Promise<unknown>>(
+function wrapWithErrorHandler<T extends (...args: any[]) => Promise<any>>(
   fn: T
 ): T {
-  return (async (...args: Parameters<T>) => {
+  const wrapped = async (...args: Parameters<T>) => {
     try {
       return await fn(...args);
     } catch (error) {
@@ -183,7 +183,8 @@ async function wrapWithErrorHandler<T extends (...args: unknown[]) => Promise<un
       }
       throw error;
     }
-  }) as T;
+  };
+  return wrapped as T;
 }
 
 // 创建 API 对象
@@ -286,5 +287,5 @@ const electronAPI = {
 // 暴露 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
-// 类型声明
-export type { ElectronAPI } from './preload';
+// 类型声明：API 对象的结构，供渲染进程引用
+export type ElectronAPI = typeof electronAPI;

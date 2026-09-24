@@ -122,9 +122,9 @@ impl AiGuardian {
         #[cfg(target_os = "linux")]
         {
             // TODO: 实现 Linux 监控
-            return Err(GuardianError::NotImplemented(
+            Err(GuardianError::NotImplemented(
                 "Linux support coming soon".to_string(),
-            ));
+            ))
         }
 
         #[cfg(not(any(windows, target_os = "linux")))]

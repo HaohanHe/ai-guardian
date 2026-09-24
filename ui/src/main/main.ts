@@ -19,9 +19,7 @@ import {
   Menu, 
   dialog, 
   shell,
-  Notification,
-  appUpdater,
-  autoUpdater
+  Notification
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -114,7 +112,7 @@ function createMainWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
-    checkBackendHealth();
+    startHealthCheck();
   });
 
   mainWindow.on('close', (event) => {
@@ -159,7 +157,7 @@ function showMinimizeNotification(): void {
 function createTray(): void {
   const iconPath = getResourcePath('icons', 'tray-icon.png');
   
-  let icon: nativeImage;
+  let icon: ReturnType<typeof nativeImage.createFromPath>;
   if (fs.existsSync(iconPath)) {
     icon = nativeImage.createFromPath(iconPath);
     if (isWindows || isLinux) {

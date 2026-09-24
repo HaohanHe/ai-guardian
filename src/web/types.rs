@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub general: GeneralConfig,
     pub security: SecurityConfig,
@@ -10,19 +10,6 @@ pub struct Config {
     pub llm: LlmConfig,
     pub logging: LoggingConfig,
     pub notification: NotificationConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            security: SecurityConfig::default(),
-            ai: AiConfig::default(),
-            llm: LlmConfig::default(),
-            logging: LoggingConfig::default(),
-            notification: NotificationConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
