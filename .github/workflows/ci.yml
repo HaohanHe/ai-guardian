@@ -103,7 +103,7 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: target/release/ai-guardian
+            artifact: target/x86_64-unknown-linux-gnu/release/ai-guardian
             name-suffix: linux-amd64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
@@ -111,7 +111,7 @@ jobs:
             name-suffix: linux-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: target/release/ai-guardian.exe
+            artifact: target/x86_64-pc-windows-msvc/release/ai-guardian.exe
             name-suffix: windows-amd64
 
     steps:
@@ -163,11 +163,24 @@ jobs:
       - name: Install clang / libbpf / bpftool
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libbpf-dev bpftool || \
-            sudo apt-get install -y clang libbpf-dev linux-tools-generic
+          sudo apt-get install -y clang libbpf-dev \
+            linux-tools-generic linux-tools-generic-hwe-22.04 || true
+
+      - name: Resolve newest bpftool binary
+        id: resolve-bpftool
+        run: |
+          # Ubuntu 的 bpftool 是按内核版本分发的包装器，运行内核（azure）往往没有
+          # 对应包；直接取 /usr/lib/linux-tools 下版本最高的真实二进制，
+          # BTF dump 只读文件，与运行内核无关
+          BIN="$(ls /usr/lib/linux-tools/*/bpftool 2>/dev/null | sort -V | tail -1)"
+          test -n "$BIN"
+          echo "Using bpftool: $BIN"
+          echo "path=$BIN" >> "$GITHUB_OUTPUT"
 
       - name: Build eBPF object
-        run: make -C driver/linux LINUX_HEADERS=/usr
+        run: >
+          make -C driver/linux LINUX_HEADERS=/usr
+          BPFTOOL=${{ steps.resolve-bpftool.outputs.path }}
 
       - name: Upload eBPF object
         uses: actions/upload-artifact@v4
@@ -219,8 +232,8 @@ jobs:
         with:
           name: ui-${{ matrix.os }}
           path: |
-            dist/main
-            dist/renderer
+            ui/dist/main
+            ui/dist/renderer
           if-no-files-found: error
 
   # =========================================================
