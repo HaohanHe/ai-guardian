@@ -153,8 +153,10 @@ mod imp {
         Ok(())
     }
 
-    fn exec_path_of(pid: i32, event_fd: RawFd) -> String {
-        let link = format!("/proc/{pid}/fd/{event_fd}");
+    fn exec_path_of(event_fd: RawFd) -> String {
+        // event fd 在守护进程自己的 fd 表里，读 /proc/self/fd；
+        // 不能去目标进程的 fd 表找（那个编号不属于它）
+        let link = format!("/proc/self/fd/{event_fd}");
         match fs::read_link(link) {
             Ok(p) => p.to_string_lossy().into_owned(),
             Err(_) => String::from("<unknown>"),
@@ -245,7 +247,7 @@ mod imp {
 
                 let is_exec = m.mask & FAN_OPEN_EXEC_PERM != 0 && m.pid != 0;
                 let path = if is_exec {
-                    exec_path_of(m.pid, m.fd)
+                    exec_path_of(m.fd)
                 } else {
                     String::new()
                 };
