@@ -398,6 +398,9 @@ You MUST recommend blocking when:
         case '/api/enforce':
           await this.handleEnforce(req, res);
           break;
+        case '/api/kernel-enforcement':
+          await this.handleKernelEnforcement(req, res);
+          break;
         default:
           this.jsonResponse(res, 404, { error: 'Not found' });
       }
@@ -882,6 +885,33 @@ You MUST recommend blocking when:
     this.jsonResponse(res, 200, { record });
   }
 
+  private async handleKernelEnforcement(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === 'GET') {
+      const view = await this.live.refreshKernel();
+      this.jsonResponse(res, 200, view);
+      return;
+    }
+    if (req.method !== 'POST') {
+      this.jsonResponse(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+    const body = (await this.getBody(req)) as {
+      action?: 'lockdown' | 'clear';
+      agents?: string[];
+    };
+    if (body.action === 'lockdown') {
+      const view = await this.live.kernelLockdown(body.agents, 'web');
+      this.jsonResponse(res, 200, view);
+      return;
+    }
+    if (body.action === 'clear') {
+      const view = await this.live.kernelClear();
+      this.jsonResponse(res, 200, view);
+      return;
+    }
+    this.jsonResponse(res, 400, { error: "action must be 'lockdown' or 'clear'" });
+  }
+
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server.listen(this.port, async () => {
@@ -1244,7 +1274,23 @@ You MUST recommend blocking when:
         </table>
       </div>
       <div id="live-events" style="max-height:180px; overflow-y:auto; background:#1a1a25; border-radius:6px; padding:1rem; font-size:0.85em;">
-        <p style="color:#666;">Live events appear here (WebSocket).</p>
+        Live events appear here (WebSocket).
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 2rem;">
+      <h2>Kernel Execution Enforcement <span id="kernel-status" style="color: #666; font-size: 0.8em;">(fanotify, Linux)</span></h2>
+      <p style="color: #888; font-size: 0.9em;">
+        Blocks commands at the kernel level before execve, so even millisecond commands cannot
+        slip between process scans. The fanotify-enforcer daemon must run as root.
+      </p>
+      <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+        <button class="danger" onclick="kernelLockdown()">Lock Down Agents</button>
+        <button class="secondary" onclick="kernelClear()">Clear Lockdown</button>
+        <button class="secondary" onclick="refreshKernel()">Refresh</button>
+      </div>
+      <div id="kernel-view" style="background:#1a1a25; border-radius:6px; padding:1rem; font-size:0.85em;">
+        <p style="color:#666;">Press Refresh to query the enforcer.</p>
       </div>
     </div>
 
@@ -1589,6 +1635,50 @@ You MUST recommend blocking when:
       } catch (e) { /* WS unavailable; use Refresh buttons */ }
     }
 
+    /* ---------- Kernel Execution Enforcement ---------- */
+
+    function renderKernel(view) {
+      var box = document.getElementById('kernel-view');
+      var badge = document.getElementById('kernel-status');
+      if (view.available) {
+        badge.textContent = '(active)';
+        badge.style.color = '#4caf50';
+        var p = view.policy || { deny_prefixes: [], lockdown_agents: [], watch_paths: [] };
+        var list = function (label, items, color) {
+          var text = items && items.length ? items.join(', ') : '(none)';
+          return '<div style="margin:4px 0;"><span style="color:#888;">' + label + ':</span> '
+            + '<span style="color:' + color + ';">' + escapeHtml(text) + '</span></div>';
+        };
+        box.innerHTML =
+          list('Locked agents', p.lockdown_agents, '#ff6b6b')
+          + list('Denied path prefixes', p.deny_prefixes, '#e0a030')
+          + list('Watched paths', p.watch_paths, '#9aa')
+          + '<div style="margin-top:8px; color:#888;">allowed: ' + view.allowed
+          + ' ｜ denied: ' + view.denied + '</div>';
+      } else {
+        badge.textContent = '(enforcer not reachable)';
+        badge.style.color = '#666';
+        box.innerHTML = '<p style="color:#666;">fanotify-enforcer is not running. '
+          + 'Start it as root: <code>sudo fanotify-enforcer</code></p>';
+      }
+    }
+
+    async function refreshKernel() {
+      try {
+        renderKernel(await apiCall('GET', '/kernel-enforcement'));
+      } catch (e) { /* auth or network error */ }
+    }
+
+    async function kernelLockdown() {
+      if (!confirm('Lock down detected AI agents at the kernel level? '
+        + 'No command under them can execute until you clear it.')) return;
+      renderKernel(await apiCall('POST', '/kernel-enforcement', { action: 'lockdown' }));
+    }
+
+    async function kernelClear() {
+      renderKernel(await apiCall('POST', '/kernel-enforcement', { action: 'clear' }));
+    }
+
     // Terminal Monitor functions
     async function startMonitor() {
       const result = await apiCall('GET', '/terminal-monitor?action=start');
@@ -1896,6 +1986,7 @@ You MUST recommend blocking when:
     refreshPending();
     updateEmergencyStatus();
     refreshProcesses();
+    refreshKernel();
     (function initLiveWs() {
       ensureToken();
       connectLiveWs();

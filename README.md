@@ -19,7 +19,7 @@ Windows 端的文件系统过滤驱动已经写好了（Minifilter，701 行 C�
 - Windows Minifilter 文件系统过滤：PreCreate / PreWrite / PreSetInformation 回调，AI 进程哈希表（256 桶，最多 1024 个 PID），敏感路径检测（System32、Program Files、用户数据目录），直接在内核态阻断删除操作
 - ETW 进程监控：用 ToolHelp32 扫描进程列表，自动识别 AI 终端（按进程名/路径匹配），把 PID 注册给驱动
 - Linux 实时进程防御：轮询 /proc 识别 Agent（内置十余种特征，子进程继承标记），跟踪运行/暂停状态；处置按进程树发 SIGSTOP / SIGCONT / SIGTERM（宽限后 SIGKILL）；急停激活自动暂停全部 Agent；CLI 提供 watch / agents 命令，Web 仪表盘通过 WebSocket 实时推送进程与事件，可在页面上直接暂停、恢复、终止
-- Linux 内核级执行拦截（fanotify）：在 `execve` 真正执行前通过 permission event 裁决。两类策略，默认全部放行只拦命中的——`--deny-prefix` 按可执行文件路径前缀拒绝，`--lockdown-agent` 沿父进程链匹配 Agent 的命令行，命中后该 Agent 树下所有新进程（含毫秒级瞬时命令）在执行前被拒。不需要自定义内核模块，主线内核通用
+- Linux 内核级执行拦截（fanotify）：在 `execve` 真正执行前通过 permission event 裁决。两类策略，默认全部放行只拦命中的——`--deny-prefix` 按可执行文件路径前缀拒绝，`--lockdown-agent` 沿父进程链匹配 Agent 的命令行，命中后该 Agent 树下所有新进程（含毫秒级瞬时命令）在执行前被拒。策略支持运行时经 Unix socket 动态下发/解除，不用重启守护进程。不需要自定义内核模块，主线内核通用
 - TS 分析模块：prompt injection 检测、混淆命令检测、MCP injection 检测、skill 供应链检查、风险评分。这些跑在用户态，对命令行输出做语义分析
 - Rust 核心引擎：主控制器、审计日志、风险引擎、配置管理，axum 跑 Web API
 - MCP server：可以作为 MCP 工具接入 OpenClaw 等 Agent 框架
@@ -94,6 +94,21 @@ sudo ./target/release/fanotify-enforcer \
 # 每条裁决输出一行 JSON：pid、路径、decision、reason
 ```
 
+守护进程默认在 `/run/ai-guardian/enforcer.sock`（建不了就回退
+`/tmp/ai-guardian-enforcer.sock`）开一个 Unix socket，运行时改策略不用重启。
+每行一个 JSON 请求，处理完即断开：
+
+```text
+{"op":"status"}
+{"op":"apply","policy":{"deny_prefixes":[],"lockdown_agents":["claude-code"],"watch_paths":["/"]}}
+```
+
+返回 `{"ok":true,"result": ...}`。TS 侧由 `KernelEnforcerClient` 封装：急停激活时
+自动按当前识别到的 Agent 下发内核锁定，急停恢复不自动解除（需人工确认现场后在
+仪表盘点 Clear），避免恢复的瞬间命令重新执行。注意 socket 默认权限是 0666，
+本机任何用户都能下发策略，信任边界等同本机登录；多用户机器可用 `--socket`
+指到受控目录或 `--no-socket` 关闭。
+
 用户态轮询有个绕不开的缺口：两次 /proc 扫描之间（默认 2 秒），8~11 毫秒就跑完的瞬时命令已经结束，事后再暂停进程也改变不了它做过的事。fanotify 把裁决点挪到 `execve` 之前，这类命令在执行前直接被拒。eBPF LSM 仍作为后续更高性能、更细粒度的路径预留（骨架可编译，尚未加载使用）。
 
 **TS 侧：**
@@ -143,7 +158,7 @@ Windows 向けのファイルシステムフィルタドライバは実装済み
 - Windows Minifilter フィルタリング：PreCreate / PreWrite / PreSetInformation コールバック、AI プロセスのハッシュテーブル（256 バケット、最大 1024 PID）、センシティブパスの判定（System32、Program Files、ユーザーデータ）、カーネルモードでの削除操作のブロック
 - ETW プロセス監視：ToolHelp32 API でプロセス一覧をスキャンし、プロセス名・パスから AI 端末を自動識別してドライバに PID を登録
 - Linux リアルタイムプロセス防御：/proc をポーリングしてエージェントを識別（10 種類以上のシグネチャを内蔵、子プロセスにも継承）し、実行／停止状態を追跡。プロセスツリー単位で SIGSTOP / SIGCONT / SIGTERM（猶予後に SIGKILL）を送信し、緊急停止で全エージェントを自動停止。CLI に watch / agents コマンド、Web ダッシュボードでは WebSocket でプロセスとイベントをリアルタイム表示し、画面上で一時停止・再開・終了が可能
-- Linux カーネルレベルの実行ブロック（fanotify）：`execve` が実際に走る前に permission event で判定します。デフォルトは全許可で、命中したものだけ止める二つのポリシーがあります。`--deny-prefix` は実行ファイルのパス接頭辞で拒否し、`--lockdown-agent` は親プロセスをたどってエージェントのコマンドラインと照合し、一致するとその配下の新しいプロセスをミリ秒単位のコマンドも含めて実行前に拒否します。自作カーネルモジュールは不要で、メインラインカーネルで使えます
+- Linux カーネルレベルの実行ブロック（fanotify）：`execve` が実際に走る前に permission event で判定します。デフォルトは全許可で、命中したものだけ止める二つのポリシーがあります。`--deny-prefix` は実行ファイルのパス接頭辞で拒否し、`--lockdown-agent` は親プロセスをたどってエージェントのコマンドラインと照合し、一致するとその配下の新しいプロセスをミリ秒単位のコマンドも含めて実行前に拒否します。ポリシーは Unix socket で実行中に動的に適用・解除でき、デーモンの再起動は不要です。自作カーネルモジュールは不要で、メインラインカーネルで使えます
 - TypeScript 分析モジュール：プロンプトインジェクション検出、難読化コマンド検出、MCP インジェクション検出、スキルサプライチェーンチェック、リスクスコアリング。ユーザーモードでコマンド出力を解析します
 - Rust コアエンジン：メインコントローラー、監査ログ、リスクエンジン、設定管理。axum で Web API を提供
 - MCP サーバー：OpenClaw などのエージェントフレームワークに MCP ツールとして組み込めます
@@ -218,6 +233,23 @@ sudo ./target/release/fanotify-enforcer \
 # 判定ごとに JSON が1行出力されます：pid、path、decision、reason
 ```
 
+デーモンは既定で `/run/ai-guardian/enforcer.sock`（作れない場合は
+`/tmp/ai-guardian-enforcer.sock`）に Unix socket を開き、再起動なしで実行中に
+ポリシーを変更できます。1行に1つの JSON を送ると、処理後に切断されます。
+
+```text
+{"op":"status"}
+{"op":"apply","policy":{"deny_prefixes":[],"lockdown_agents":["claude-code"],"watch_paths":["/"]}}
+```
+
+応答は `{"ok":true,"result": ...}` です。TypeScript 側は `KernelEnforcerClient`
+が担当し、緊急停止が発動すると現在検出されているエージェントでカーネルロックを
+自動適用します。緊急停止の復旧時にロックは自動解除されません。現場を確認して
+からダッシュボードで Clear を押す設計で、復旧の瞬間にコマンドが再実行されるのを
+防ぎます。socket の既定権限は 0666 で、マシン上のどのユーザーでもポリシーを
+送れます。信頼境界はそのマシンへのログインと同じです。マルチユーザー環境では
+`--socket` で管理されたディレクトリを指定するか、`--no-socket` で無効にできます。
+
 ユーザーランドのポーリングには埋められない隙間があります。/proc のスキャン間隔（デフォルト2秒）の間に、8〜11ミリ秒で終わるコマンドは実行を終えてしまい、後からプロセスを止めても実行された操作は取り消せません。fanotify は判定点を `execve` の前に移すので、こうしたコマンドは実行前に拒否されます。eBPF LSM は、より高パフォーマンスで粒度の細かい今後の経路として残しています（骨組みはコンパイル可能、読み込みはまだ）。
 
 **TypeScript 側：**
@@ -267,7 +299,7 @@ The working path today is Windows. After the Minifilter driver loads, you tell i
 - Windows Minifilter filtering: PreCreate, PreWrite, and PreSetInformation callbacks, an AI process hash table (256 buckets, up to 1024 PIDs), sensitive path detection (System32, Program Files, user data directories), and direct kernel-mode blocking of delete operations
 - ETW process monitoring: scans the process list via ToolHelp32, identifies AI terminals by process name and path, then registers their PIDs with the driver
 - Linux live process defense: polls /proc to identify agents (over a dozen built-in signatures, inherited by child processes) and tracks running/stopped state. Enforcement is process-tree aware: SIGSTOP / SIGCONT / SIGTERM (SIGKILL after a grace period); emergency stop auto-suspends every agent. The CLI offers watch and agents commands, and the web dashboard pushes processes and events over WebSocket with on-page suspend/resume/terminate controls
-- Linux kernel-level exec blocking (fanotify): decisions happen on a permission event before `execve` runs. Everything is allowed by default, and two policies only block what matches. `--deny-prefix` rejects by executable path prefix, and `--lockdown-agent` walks the parent chain against the agent's command line; once matched, every new process under that tree is rejected before it runs, including millisecond commands. No custom kernel module is needed on mainline kernels
+- Linux kernel-level exec blocking (fanotify): decisions happen on a permission event before `execve` runs. Everything is allowed by default, and two policies only block what matches. `--deny-prefix` rejects by executable path prefix, and `--lockdown-agent` walks the parent chain against the agent's command line; once matched, every new process under that tree is rejected before it runs, including millisecond commands. Policy can be applied or cleared at runtime over a Unix socket without restarting the daemon. No custom kernel module is needed on mainline kernels
 - TypeScript analysis modules: prompt injection detection, obfuscation detection, MCP injection detection, skill supply chain checks, and risk scoring. These run in user space and analyze command output
 - Rust core engine: main controller, audit logger, risk engine, and config management, with axum serving a Web API
 - MCP server: can be plugged into agent frameworks like OpenClaw as an MCP tool
@@ -341,6 +373,23 @@ sudo ./target/release/fanotify-enforcer \
   --lockdown-agent claude-code
 # Each decision prints one JSON line: pid, path, decision, reason
 ```
+
+The daemon opens a Unix socket at `/run/ai-guardian/enforcer.sock` by default (it falls
+back to `/tmp/ai-guardian-enforcer.sock`), so policy can change at runtime without a
+restart. Send one JSON object per line; the connection closes after the response:
+
+```text
+{"op":"status"}
+{"op":"apply","policy":{"deny_prefixes":[],"lockdown_agents":["claude-code"],"watch_paths":["/"]}}
+```
+
+It returns `{"ok":true,"result": ...}`. On the TypeScript side, `KernelEnforcerClient`
+wraps this: an emergency stop automatically applies a kernel lockdown for the agents
+currently detected. Resuming the emergency stop does not clear the lockdown. You confirm
+the scene and press Clear on the dashboard, so commands cannot run again the moment
+things resume. The socket is created with mode 0666, which means any local user can push
+policy; the trust boundary is the same as local login. On a multi-user machine, point
+`--socket` at a controlled directory or disable it with `--no-socket`.
 
 Userspace polling has a gap it cannot close. Between two /proc scans (2 seconds by default), a command that finishes in 8 to 11 milliseconds is already gone; suspending the process afterward does not undo what it did. fanotify moves the decision point before `execve`, so those commands are rejected before they run. The eBPF LSM remains reserved as a later path with higher performance and finer granularity (the skeleton compiles, but it is not loaded yet).
 

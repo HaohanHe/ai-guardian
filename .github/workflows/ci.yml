@@ -221,19 +221,26 @@ jobs:
           set -euxo pipefail
           WD="$PWD"
           ENF="$WD/target/release/fanotify-enforcer"
+          SOCK="/tmp/guardfan/enforcer.sock"
 
           # 失败时把守护进程日志打出来，便于定位
           dump_logs() {
-            echo "===== enf1.log ====="; cat /tmp/enf1.log 2>/dev/null || true
-            echo "===== enf2.log ====="; cat /tmp/enf2.log 2>/dev/null || true
+            echo "===== enf.log ====="; cat /tmp/enf.log 2>/dev/null || true
           }
           trap 'dump_logs' ERR
 
           # 确定监听目标：根文件系统；/tmp 若在不同设备上则一并监听
-          WATCH=(--watch /)
+          WATCH_PATHS=(/)
           if [ "$(stat -c %d /)" != "$(stat -c %d /tmp)" ]; then
-            WATCH+=(--watch /tmp)
+            WATCH_PATHS+=(/tmp)
           fi
+          WATCH=()
+          for p in "${WATCH_PATHS[@]}"; do WATCH+=(--watch "$p"); done
+
+          # watch_paths 的 JSON 数组
+          WJ="["
+          for p in "${WATCH_PATHS[@]}"; do WJ+="\"$p\","; done
+          WJ="${WJ%,}]"
 
           mkdir -p /tmp/guardfan/deny
           cp /bin/true /tmp/guardfan/deny/true
@@ -255,31 +262,48 @@ jobs:
           chmod +x /tmp/fast-agent.sh
           : > /tmp/fast_damage.log
 
+          # socket 小客户端：node <script> <path> <payload>；响应 ok=false 即退出码 2
+          cat > /tmp/guardian-ctl.js <<'JS'
+          const net = require('net');
+          const sock = net.createConnection(process.argv[2]);
+          const payload = process.argv[3];
+          let raw = '';
+          sock.on('connect', () => { sock.write(payload + '\n'); sock.end(); });
+          sock.on('data', d => { raw += d.toString('utf8'); });
+          sock.on('end', () => {
+            const line = raw.split('\n').find(l => l.trim().length > 0);
+            const msg = JSON.parse(line);
+            process.stdout.write(line + '\n');
+            if (!msg.ok) process.exit(2);
+          });
+          sock.on('error', e => { console.error(e.message); process.exit(3); });
+          JS
+          ctl() { node /tmp/guardian-ctl.js "$SOCK" "$1"; }
+
           # 等守护进程就绪（日志出现 started），起不来就报错并打印日志
           wait_ready() {
-            local logf=$1
             for _ in $(seq 1 50); do
-              grep -q 'fanotify enforcer started' "$logf" && return 0
+              grep -q 'fanotify enforcer started' /tmp/enf.log && return 0
               sleep 0.1
             done
             return 1
           }
 
-          # ---- 阶段 1：只启用 deny-prefix ----
-          : > /tmp/enf1.log
+          # ---- 阶段 1：只启用 deny-prefix（策略后续动态改，不重启） ----
+          : > /tmp/enf.log
           sudo "$ENF" "${WATCH[@]}" --deny-prefix /tmp/guardfan/deny \
-            > /tmp/enf1.log 2>&1 &
-          wait_ready /tmp/enf1.log
+            --socket "$SOCK" \
+            > /tmp/enf.log 2>&1 &
+          wait_ready
 
           # 自检：事件链路必须通（/bin/true 放行后日志里要有一条 JSON）
           /bin/true
           sleep 0.3
-          grep -q '"decision":"allow"' /tmp/enf1.log
+          grep -q '"decision":"allow"' /tmp/enf.log
 
           if /tmp/guardfan/deny/true; then
             echo "FAIL: denied binary was executed"
-            echo "----- last daemon decisions -----"
-            tail -30 /tmp/enf1.log
+            tail -30 /tmp/enf.log
             exit 1
           fi
 
@@ -290,21 +314,25 @@ jobs:
           test "$N1" -gt 0
           echo "phase1: agent produced $N1 actions (no lockdown yet)"
 
-          # ---- 阶段 2：重启并加入 agent lockdown ----
-          sudo pkill -TERM -x fanotify-enforc
-          sleep 1
-          : > /tmp/enf2.log
-          sudo "$ENF" "${WATCH[@]}" --deny-prefix /tmp/guardfan/deny \
-            --lockdown-agent claude-code \
-            > /tmp/enf2.log 2>&1 &
-          wait_ready /tmp/enf2.log
+          # status 必须返回策略与计数
+          ctl '{"op":"status"}' | grep -q '"allowed"'
+
+          # ---- 阶段 2：经 socket 动态下发 agent lockdown，无需重启 ----
+          ctl "{\"op\":\"apply\",\"policy\":{\"deny_prefixes\":[\"/tmp/guardfan/deny\"],\"lockdown_agents\":[\"claude-code\"],\"watch_paths\":$WJ}}"
           N2=$(wc -l < /tmp/fast_damage.log)
           sleep 3
           N3=$(wc -l < /tmp/fast_damage.log)
           echo "phase2: lines at lockdown=$N2, after 3s=$N3"
           test "$N2" -eq "$N3"
-          grep -q 'spawned under locked-down agent' /tmp/enf2.log
-          grep -q '"decision":"deny"' /tmp/enf2.log
+          grep -q 'spawned under locked-down agent' /tmp/enf.log
+          grep -q '"decision":"deny"' /tmp/enf.log
+
+          # ---- 阶段 3：经 socket 解除锁定，agent 必须立刻恢复动作 ----
+          ctl "{\"op\":\"apply\",\"policy\":{\"deny_prefixes\":[\"/tmp/guardfan/deny\"],\"lockdown_agents\":[],\"watch_paths\":$WJ}}"
+          sleep 2
+          N4=$(wc -l < /tmp/fast_damage.log)
+          echo "phase3: lines at clear=$N3, after 2s=$N4"
+          test "$N4" -gt "$N3"
 
           # ---- 清理 ----
           sudo pkill -TERM -x fanotify-enforc

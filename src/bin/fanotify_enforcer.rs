@@ -7,6 +7,13 @@
 //!   --deny-prefix <PATH>      可执行文件路径以该前缀开头 → 拒绝（可重复）
 //!   --lockdown-agent <PAT>    进程任一祖先的 cmdline 命中 → 拒绝（可重复）
 //!
+//! 运行时控制（默认开启，--no-socket 可关）：
+//!   Unix socket，默认 /run/ai-guardian/enforcer.sock，建不了就回退
+//!   /tmp/ai-guardian-enforcer.sock；--socket 可显式指定。
+//!   每行一个 JSON 请求：
+//!     {"op":"status"}
+//!     {"op":"apply","policy":{"deny_prefixes":[],"lockdown_agents":[],"watch_paths":["/"]}}
+//!
 //! 需要 root（CAP_SYS_ADMIN）。每条裁决输出一行 JSON 审计日志。
 
 #[cfg(target_os = "linux")]
@@ -15,23 +22,39 @@ mod imp {
     use std::ffi::CString;
     use std::io::{self, Write};
     use std::os::fd::RawFd;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::path::Path;
     use std::sync::Arc;
     use std::{fs, process};
 
     use libc::{
-        c_void, fanotify_event_metadata, fanotify_init, fanotify_mark, fanotify_response,
-        FAN_ALLOW, FAN_CLASS_CONTENT, FAN_DENY, FAN_EVENT_ON_CHILD, FAN_MARK_ADD,
-        FAN_MARK_FILESYSTEM, FAN_MARK_FLUSH, FAN_MARK_MOUNT, FAN_OPEN_EXEC_PERM,
-        FAN_UNLIMITED_QUEUE, O_CLOEXEC, O_RDONLY,
+        c_void, fanotify_event_metadata, fanotify_init, fanotify_mark, fanotify_response, poll,
+        pollfd, sockaddr_un, AF_UNIX, FAN_ALLOW, FAN_CLASS_CONTENT, FAN_DENY, FAN_EVENT_ON_CHILD,
+        FAN_MARK_ADD, FAN_MARK_FILESYSTEM, FAN_MARK_FLUSH, FAN_MARK_MOUNT, FAN_OPEN_EXEC_PERM,
+        FAN_UNLIMITED_QUEUE, O_CLOEXEC, O_RDONLY, POLLERR, POLLHUP, POLLIN, SOCK_CLOEXEC,
+        SOCK_NONBLOCK, SOCK_STREAM,
     };
+    use parking_lot::RwLock;
+    use serde::{Deserialize, Serialize};
 
-    #[derive(Default)]
+    const DEFAULT_SOCKET_RUN: &str = "/run/ai-guardian/enforcer.sock";
+    const DEFAULT_SOCKET_TMP: &str = "/tmp/ai-guardian-enforcer.sock";
+    const MAX_CLIENT_BUF: usize = 65536;
+
+    #[derive(Default, Clone, Serialize, Deserialize)]
+    #[serde(default)]
     struct Policy {
         deny_prefixes: Vec<String>,
         lockdown_agents: Vec<String>,
         watch_paths: Vec<String>,
     }
+
+    #[derive(Default)]
+    struct Shared {
+        policy: Policy,
+        allowed: u64,
+        denied: u64,
+    }
+    type State = Arc<RwLock<Shared>>;
 
     enum Decision {
         Allow,
@@ -101,8 +124,15 @@ mod imp {
         after.split_whitespace().nth(1)?.parse().ok()
     }
 
-    fn parse_args() -> Policy {
+    struct BootConfig {
+        policy: Policy,
+        /// None(外层) = 默认自动；Some(None) = 关闭；Some(Some(path)) = 显式路径
+        socket: Option<Option<String>>,
+    }
+
+    fn parse_args() -> BootConfig {
         let mut policy = Policy::default();
+        let mut socket: Option<Option<String>> = None;
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -121,13 +151,15 @@ mod imp {
                         policy.watch_paths.push(v);
                     }
                 }
+                "--socket" => socket = Some(args.next()),
+                "--no-socket" => socket = Some(None),
                 other => eprintln!("ignoring unknown argument: {other}"),
             }
         }
         if policy.watch_paths.is_empty() {
             policy.watch_paths.push("/".to_string());
         }
-        policy
+        BootConfig { policy, socket }
     }
 
     fn fan_fd() -> io::Result<RawFd> {
@@ -151,6 +183,185 @@ mod imp {
             return Err(io::Error::last_os_error());
         }
         Ok(())
+    }
+
+    fn exec_mask() -> u64 {
+        FAN_OPEN_EXEC_PERM | FAN_EVENT_ON_CHILD
+    }
+
+    fn apply_marks(fd: RawFd, policy: &Policy) -> io::Result<()> {
+        let mask = exec_mask();
+        for path in &policy.watch_paths {
+            // 同一文件系统内，MOUNT 标记覆盖该挂载点，FILESYSTEM 标记覆盖整个文件系统
+            mark(fd, path, mask, FAN_MARK_ADD | FAN_MARK_MOUNT)?;
+            mark(fd, path, mask, FAN_MARK_ADD | FAN_MARK_FILESYSTEM)?;
+        }
+        Ok(())
+    }
+
+    fn flush_marks(fd: RawFd, policy: &Policy) {
+        for path in &policy.watch_paths {
+            let _ = mark(fd, path, 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
+            let _ = mark(fd, path, 0, FAN_MARK_FLUSH | FAN_MARK_FILESYSTEM);
+        }
+    }
+
+    /// 监听点变更：先整体清掉旧标记，再按新策略重建
+    fn replace_watches(fd: RawFd, old: &Policy, new: &Policy) -> io::Result<()> {
+        flush_marks(fd, old);
+        apply_marks(fd, new)
+    }
+
+    fn bind_listener(path: &str) -> io::Result<RawFd> {
+        let _ = fs::remove_file(path);
+        if let Some(parent) = Path::new(path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let lfd = unsafe { libc::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0) };
+        if lfd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut addr: sockaddr_un = unsafe { std::mem::zeroed() };
+        addr.sun_family = AF_UNIX as _;
+        let bytes = path.as_bytes();
+        if bytes.len() >= addr.sun_path.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "socket path too long",
+            ));
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr() as *const c_void,
+                addr.sun_path.as_mut_ptr() as *mut c_void,
+                bytes.len(),
+            );
+        }
+        let len = std::mem::offset_of!(sockaddr_un, sun_path) + bytes.len();
+        let rc = unsafe { libc::bind(lfd, (&addr as *const sockaddr_un).cast(), len as u32) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let cpath = CString::new(path).unwrap();
+        // 本机任何用户都能连进来下发策略：信任边界等同本机登录，文档里写明
+        unsafe {
+            libc::chmod(cpath.as_ptr(), 0o666);
+        }
+        let rc = unsafe { libc::listen(lfd, 8) };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(lfd)
+    }
+
+    fn open_listener(cfg: Option<Option<String>>) -> Option<(RawFd, String)> {
+        match cfg {
+            Some(Some(p)) => match bind_listener(&p) {
+                Ok(fd) => Some((fd, p)),
+                Err(e) => {
+                    eprintln!("fanotify enforcer: cannot bind control socket {p}: {e}");
+                    None
+                }
+            },
+            Some(None) => None,
+            None => {
+                for p in [DEFAULT_SOCKET_RUN, DEFAULT_SOCKET_TMP] {
+                    if let Ok(fd) = bind_listener(p) {
+                        return Some((fd, p.to_string()));
+                    }
+                }
+                eprintln!("fanotify enforcer: no control socket available");
+                None
+            }
+        }
+    }
+
+    fn json_ok(v: serde_json::Value) -> String {
+        serde_json::json!({"ok": true, "result": v}).to_string()
+    }
+
+    fn json_err(e: &str) -> String {
+        serde_json::json!({"ok": false, "error": e}).to_string()
+    }
+
+    fn handle_request(line: &str, state: &State, fan: RawFd) -> String {
+        let req: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => return json_err(&format!("invalid json: {e}")),
+        };
+        match req.get("op").and_then(|v| v.as_str()) {
+            Some("status") => {
+                let s = state.read();
+                let body = serde_json::json!({
+                    "policy": s.policy,
+                    "allowed": s.allowed,
+                    "denied": s.denied,
+                    "pid": process::id(),
+                });
+                json_ok(body)
+            }
+            Some("apply") => {
+                let policy: Policy = match req.get("policy").cloned() {
+                    Some(v) => match serde_json::from_value::<Policy>(v) {
+                        Ok(mut p) => {
+                            if p.watch_paths.is_empty() {
+                                p.watch_paths.push("/".to_string());
+                            }
+                            p
+                        }
+                        Err(e) => return json_err(&format!("invalid policy: {e}")),
+                    },
+                    None => return json_err("missing policy"),
+                };
+                let old = state.read().policy.clone();
+                if let Err(e) = replace_watches(fan, &old, &policy) {
+                    return json_err(&format!("failed to update watches: {e}"));
+                }
+                state.write().policy = policy;
+                json_ok(serde_json::Value::String("applied".to_string()))
+            }
+            Some(other) => json_err(&format!("unknown op: {other}")),
+            None => json_err("missing op"),
+        }
+    }
+
+    struct Client {
+        fd: RawFd,
+        buf: String,
+    }
+
+    fn read_available(fd: RawFd) -> io::Result<Vec<u8>> {
+        let mut all = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = unsafe { libc::read(fd, chunk.as_mut_ptr() as *mut c_void, chunk.len()) };
+            if n < 0 {
+                let err = io::Error::last_os_error();
+                if err.raw_os_error() == Some(libc::EAGAIN)
+                    || err.raw_os_error() == Some(libc::EWOULDBLOCK)
+                {
+                    break;
+                }
+                return Err(err);
+            }
+            if n == 0 {
+                if all.is_empty() {
+                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"));
+                }
+                break;
+            }
+            all.extend_from_slice(&chunk[..n as usize]);
+            if (n as usize) < chunk.len() {
+                break;
+            }
+        }
+        Ok(all)
+    }
+
+    fn write_response(fd: RawFd, resp: &str) {
+        let data = format!("{resp}\n");
+        let _ = unsafe { libc::write(fd, data.as_ptr() as *const c_void, data.len()) };
     }
 
     fn exec_path_of(event_fd: RawFd) -> String {
@@ -181,27 +392,94 @@ mod imp {
         Ok(())
     }
 
+    fn handle_fan(fan: RawFd, buf: &mut [u8], state: &State) -> io::Result<()> {
+        let n = unsafe { libc::read(fan, buf.as_mut_ptr() as *mut c_void, buf.len()) };
+        if n < 0 {
+            let err = io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EINTR) {
+                return Ok(());
+            }
+            return Err(err);
+        }
+        let len = n as usize;
+        // 每轮事件克隆一份策略快照，裁决期间不持锁，避免 /proc 遍历阻塞控制通道
+        let policy = state.read().policy.clone();
+
+        let mut meta = buf.as_ptr() as *const fanotify_event_metadata;
+        let mut remaining = len;
+        while event_ok(meta, remaining) {
+            let m = unsafe { &*meta };
+
+            let is_exec = m.mask & FAN_OPEN_EXEC_PERM != 0 && m.pid != 0;
+            let path = if is_exec {
+                exec_path_of(m.fd)
+            } else {
+                String::new()
+            };
+            let (allow, reason) = if is_exec {
+                match policy.decide(m.pid, &path) {
+                    Decision::Allow => {
+                        state.write().allowed += 1;
+                        (true, "allow".to_string())
+                    }
+                    Decision::Deny(r) => {
+                        state.write().denied += 1;
+                        (false, r)
+                    }
+                }
+            } else {
+                (true, format!("non-exec event mask=0x{:x}", m.mask))
+            };
+            println!(
+                "{}",
+                serde_json::json!({
+                    "pid": m.pid,
+                    "path": path,
+                    "mask": format!("0x{:x}", m.mask),
+                    "decision": if allow { "allow" } else { "deny" },
+                    "reason": reason,
+                })
+            );
+            io::stdout().flush().ok();
+            respond(fan, m.fd, allow)?;
+            unsafe { libc::close(m.fd) };
+
+            // FAN_EVENT_NEXT
+            let event_len = m.event_len as usize;
+            remaining -= event_len;
+            meta = unsafe { (meta as *const u8).add(event_len) as *const fanotify_event_metadata };
+        }
+        Ok(())
+    }
+
     pub(crate) fn run() -> anyhow::Result<()> {
         if unsafe { libc::geteuid() } != 0 {
             eprintln!("fanotify-enforcer must run as root (needs CAP_SYS_ADMIN)");
             process::exit(1);
         }
-        let policy = parse_args();
+        let boot = parse_args();
         let fan = fan_fd()?;
-        let mask = FAN_OPEN_EXEC_PERM | FAN_EVENT_ON_CHILD;
-        for path in &policy.watch_paths {
-            // 同一文件系统内，MOUNT 标记覆盖该挂载点，FILESYSTEM 标记覆盖整个文件系统
-            mark(fan, path, mask, FAN_MARK_ADD | FAN_MARK_MOUNT)?;
-            mark(fan, path, mask, FAN_MARK_ADD | FAN_MARK_FILESYSTEM)?;
+        apply_marks(fan, &boot.policy)?;
+        for path in &boot.policy.watch_paths {
             eprintln!("fanotify enforcer: watching exec under {path}");
+        }
+
+        let listener = open_listener(boot.socket);
+        let sock_path = listener.as_ref().map(|(_, p)| p.clone());
+        if let Some(ref p) = sock_path {
+            eprintln!("fanotify enforcer: control socket at {p}");
         }
         eprintln!("fanotify enforcer started");
 
-        // 用 sigwait 在独立线程收 SIGTERM/SIGINT，收到后清标记再退出
-        let stop = Arc::new(AtomicBool::new(false));
+        let state: State = Arc::new(RwLock::new(Shared {
+            policy: boot.policy,
+            allowed: 0,
+            denied: 0,
+        }));
+
+        // 独立线程 sigwait 收 SIGTERM/SIGINT：按当前策略清标记、删 socket 后退出
         {
-            let stop = stop.clone();
-            let watch = policy.watch_paths.clone();
+            let state = state.clone();
             std::thread::spawn(move || {
                 let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
                 unsafe {
@@ -210,91 +488,124 @@ mod imp {
                     libc::sigaddset(&mut set, libc::SIGINT);
                     libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
                     let mut sig: i32 = 0;
-                    libc::sigwait(&set, &mut sig);
+                    loop {
+                        if libc::sigwait(&set, &mut sig) == 0
+                            && matches!(sig, libc::SIGTERM | libc::SIGINT)
+                        {
+                            let policy = state.read().policy.clone();
+                            flush_marks(fan, &policy);
+                            libc::close(fan);
+                            if let Some(p) = &sock_path {
+                                let _ = fs::remove_file(p);
+                            }
+                            process::exit(0);
+                        }
+                    }
                 }
-                stop.store(true, Ordering::SeqCst);
-                for path in &watch {
-                    let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
-                    let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_FILESYSTEM);
-                }
-                unsafe { libc::close(fan) };
-                process::exit(0);
             });
         }
 
-        let mut allowed: u64 = 0;
-        let mut denied: u64 = 0;
+        let mut clients: Vec<Client> = Vec::new();
         let mut buf = [0u8; 8192];
 
         loop {
-            if stop.load(Ordering::SeqCst) {
-                break;
+            let mut pfds: Vec<pollfd> = Vec::with_capacity(2 + clients.len());
+            pfds.push(pollfd {
+                fd: fan,
+                events: POLLIN,
+                revents: 0,
+            });
+            let client_base = if let Some((lfd, _)) = listener {
+                pfds.push(pollfd {
+                    fd: lfd,
+                    events: POLLIN,
+                    revents: 0,
+                });
+                2
+            } else {
+                1
+            };
+            for c in &clients {
+                pfds.push(pollfd {
+                    fd: c.fd,
+                    events: POLLIN,
+                    revents: 0,
+                });
             }
-            let n = unsafe { libc::read(fan, buf.as_mut_ptr() as *mut c_void, buf.len()) };
-            if n < 0 {
+
+            let pr = unsafe { poll(pfds.as_mut_ptr(), pfds.len() as u64, 250) };
+            if pr < 0 {
                 let err = io::Error::last_os_error();
                 if err.raw_os_error() == Some(libc::EINTR) {
                     continue;
                 }
                 return Err(err.into());
             }
-            let len = n as usize;
 
-            let mut meta = buf.as_ptr() as *const fanotify_event_metadata;
-            let mut remaining = len;
-            while event_ok(meta, remaining) {
-                let m = unsafe { &*meta };
+            if pfds[0].revents & POLLIN != 0 {
+                handle_fan(fan, &mut buf, &state)?;
+            }
 
-                let is_exec = m.mask & FAN_OPEN_EXEC_PERM != 0 && m.pid != 0;
-                let path = if is_exec {
-                    exec_path_of(m.fd)
-                } else {
-                    String::new()
-                };
-                let (allow, reason) = if is_exec {
-                    match policy.decide(m.pid, &path) {
-                        Decision::Allow => {
-                            allowed += 1;
-                            (true, "allow".to_string())
+            if let Some((lfd, _)) = listener {
+                if pfds[1].revents & POLLIN != 0 {
+                    loop {
+                        let cfd = unsafe {
+                            libc::accept4(
+                                lfd,
+                                std::ptr::null_mut(),
+                                std::ptr::null_mut(),
+                                SOCK_CLOEXEC | SOCK_NONBLOCK,
+                            )
+                        };
+                        if cfd < 0 {
+                            break;
                         }
-                        Decision::Deny(r) => {
-                            denied += 1;
-                            (false, r)
+                        clients.push(Client {
+                            fd: cfd,
+                            buf: String::new(),
+                        });
+                    }
+                }
+            }
+
+            let mut close_idx: Vec<usize> = Vec::new();
+            for (i, c) in clients.iter_mut().enumerate() {
+                let pidx = client_base + i;
+                if pfds[pidx].revents & (POLLIN | POLLHUP | POLLERR) != 0 {
+                    let mut eof = false;
+                    match read_available(c.fd) {
+                        Ok(bytes) => c.buf.push_str(&String::from_utf8_lossy(&bytes)),
+                        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => eof = true,
+                        Err(_) => {
+                            close_idx.push(i);
+                            continue;
                         }
                     }
-                } else {
-                    (true, format!("non-exec event mask=0x{:x}", m.mask))
-                };
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "pid": m.pid,
-                        "path": path,
-                        "mask": format!("0x{:x}", m.mask),
-                        "decision": if allow { "allow" } else { "deny" },
-                        "reason": reason,
-                    })
-                );
-                io::stdout().flush().ok();
-                respond(fan, m.fd, allow)?;
-                unsafe { libc::close(m.fd) };
-
-                // FAN_EVENT_NEXT
-                let event_len = m.event_len as usize;
-                remaining -= event_len;
-                meta =
-                    unsafe { (meta as *const u8).add(event_len) as *const fanotify_event_metadata };
+                    if c.buf.len() > MAX_CLIENT_BUF {
+                        write_response(c.fd, &json_err("request too large"));
+                        close_idx.push(i);
+                        continue;
+                    }
+                    let line = match c.buf.find('\n') {
+                        Some(nl) => c.buf[..nl].to_string(),
+                        None if eof && !c.buf.is_empty() => c.buf.clone(),
+                        None => continue,
+                    };
+                    let line = line.trim();
+                    if line.is_empty() {
+                        close_idx.push(i);
+                        continue;
+                    }
+                    let resp = handle_request(line, &state, fan);
+                    write_response(c.fd, &resp);
+                    close_idx.push(i);
+                }
+            }
+            for i in close_idx.into_iter().rev() {
+                let c = clients.remove(i);
+                unsafe { libc::close(c.fd) };
             }
         }
-
-        // 退出前清掉标记，避免遗留裁决点
-        for path in &policy.watch_paths {
-            let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_MOUNT);
-            let _ = mark(fan, path, 0, FAN_MARK_FLUSH | FAN_MARK_FILESYSTEM);
-        }
-        unsafe { libc::close(fan) };
-        eprintln!("fanotify enforcer stopped: allowed={allowed} denied={denied}");
-        Ok(())
     }
 
     fn event_ok(meta: *const fanotify_event_metadata, len: usize) -> bool {
@@ -345,6 +656,38 @@ mod imp {
                 p.match_lockdown(&["anything".to_string()]),
                 Decision::Allow
             ));
+        }
+
+        #[test]
+        fn policy_json_roundtrip() {
+            let p = Policy {
+                deny_prefixes: vec!["/a".to_string()],
+                lockdown_agents: vec!["claude".to_string()],
+                watch_paths: vec!["/".to_string()],
+            };
+            let text = serde_json::to_string(&p).unwrap();
+            let back: Policy = serde_json::from_str(&text).unwrap();
+            assert_eq!(back.deny_prefixes, p.deny_prefixes);
+            assert_eq!(back.lockdown_agents, p.lockdown_agents);
+            assert_eq!(back.watch_paths, p.watch_paths);
+        }
+
+        #[test]
+        fn status_request_shape() {
+            let st: State = Arc::new(RwLock::new(Shared::default()));
+            let raw = handle_request("{\"op\":\"status\"}", &st, -1);
+            let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(v["ok"], true);
+            assert!(v["result"]["policy"].is_object());
+            assert_eq!(v["result"]["allowed"], 0);
+        }
+
+        #[test]
+        fn unknown_op_errors() {
+            let st: State = Arc::new(RwLock::new(Shared::default()));
+            let raw = handle_request("{\"op\":\"nope\"}", &st, -1);
+            let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(v["ok"], false);
         }
     }
 }
