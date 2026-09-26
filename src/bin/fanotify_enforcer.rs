@@ -505,48 +505,74 @@ mod imp {
             });
         }
 
-        let mut clients: Vec<Client> = Vec::new();
-        let mut buf = [0u8; 8192];
-
+        let mut el = EventLoop::new(fan, listener.map(|(lfd, _)| lfd));
         loop {
-            let mut pfds: Vec<pollfd> = Vec::with_capacity(2 + clients.len());
+            if let Err(e) = el.step(&state) {
+                if e.raw_os_error() == Some(libc::EINTR) {
+                    continue;
+                }
+                return Err(e.into());
+            }
+        }
+    }
+
+    /// fanotify fd + 控制 listener + 已接受 client 的单次 poll 循环
+    struct EventLoop {
+        fan: RawFd,
+        listener: Option<RawFd>,
+        clients: Vec<Client>,
+        buf: [u8; 8192],
+    }
+
+    impl EventLoop {
+        fn new(fan: RawFd, listener: Option<RawFd>) -> Self {
+            Self {
+                fan,
+                listener,
+                clients: Vec::new(),
+                buf: [0u8; 8192],
+            }
+        }
+
+        fn step(&mut self, state: &State) -> io::Result<()> {
+            let mut pfds: Vec<pollfd> = Vec::with_capacity(2 + self.clients.len());
             pfds.push(pollfd {
-                fd: fan,
+                fd: self.fan,
                 events: POLLIN,
                 revents: 0,
             });
-            let client_base = if let Some((lfd, _)) = listener {
-                pfds.push(pollfd {
-                    fd: lfd,
-                    events: POLLIN,
-                    revents: 0,
-                });
-                2
-            } else {
-                1
+            let client_base = match self.listener {
+                Some(lfd) => {
+                    pfds.push(pollfd {
+                        fd: lfd,
+                        events: POLLIN,
+                        revents: 0,
+                    });
+                    2
+                }
+                None => 1,
             };
-            for c in &clients {
+            for c in &self.clients {
                 pfds.push(pollfd {
                     fd: c.fd,
                     events: POLLIN,
                     revents: 0,
                 });
             }
+            // 本轮只处理 poll 时已存在的 client；accept 阶段新加入的下一轮再处理，
+            // 否则 pfds 里没有它们的位置会越界
+            let polled_clients = self.clients.len();
 
             let pr = unsafe { poll(pfds.as_mut_ptr(), pfds.len() as u64, 250) };
             if pr < 0 {
-                let err = io::Error::last_os_error();
-                if err.raw_os_error() == Some(libc::EINTR) {
-                    continue;
-                }
-                return Err(err.into());
+                return Err(io::Error::last_os_error());
             }
 
             if pfds[0].revents & POLLIN != 0 {
-                handle_fan(fan, &mut buf, &state)?;
+                handle_fan(self.fan, &mut self.buf, state)?;
             }
 
-            if let Some((lfd, _)) = listener {
+            if let Some(lfd) = self.listener {
                 if pfds[1].revents & POLLIN != 0 {
                     loop {
                         let cfd = unsafe {
@@ -560,7 +586,7 @@ mod imp {
                         if cfd < 0 {
                             break;
                         }
-                        clients.push(Client {
+                        self.clients.push(Client {
                             fd: cfd,
                             buf: String::new(),
                         });
@@ -569,7 +595,8 @@ mod imp {
             }
 
             let mut close_idx: Vec<usize> = Vec::new();
-            for (i, c) in clients.iter_mut().enumerate() {
+            for i in 0..polled_clients {
+                let c = &mut self.clients[i];
                 let pidx = client_base + i;
                 if pfds[pidx].revents & (POLLIN | POLLHUP | POLLERR) != 0 {
                     let mut eof = false;
@@ -596,15 +623,16 @@ mod imp {
                         close_idx.push(i);
                         continue;
                     }
-                    let resp = handle_request(line, &state, fan);
+                    let resp = handle_request(line, state, self.fan);
                     write_response(c.fd, &resp);
                     close_idx.push(i);
                 }
             }
             for i in close_idx.into_iter().rev() {
-                let c = clients.remove(i);
+                let c = self.clients.remove(i);
                 unsafe { libc::close(c.fd) };
             }
+            Ok(())
         }
     }
 
@@ -688,6 +716,44 @@ mod imp {
             let raw = handle_request("{\"op\":\"nope\"}", &st, -1);
             let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
             assert_eq!(v["ok"], false);
+        }
+
+        /// 真实 EventLoop + 真实 Unix socket 端到端：
+        /// 连接在某一步被 accept，下一步必须被服务，不能越界崩溃
+        #[test]
+        fn event_loop_serves_socket() {
+            use std::io::{Read, Write};
+            use std::os::unix::net::UnixStream;
+            use std::thread;
+            use std::time::Duration;
+
+            let path = format!("/tmp/guard-el-{}.sock", process::id());
+            let lfd = bind_listener(&path).unwrap();
+            let st: State = Arc::new(RwLock::new(Shared::default()));
+            let mut el = EventLoop::new(-1, Some(lfd));
+
+            let server = thread::spawn(move || {
+                for _ in 0..100 {
+                    el.step(&st).unwrap();
+                    thread::sleep(Duration::from_millis(5));
+                }
+            });
+
+            thread::sleep(Duration::from_millis(30));
+            let mut c = UnixStream::connect(&path).unwrap();
+            c.write_all(b"{\"op\":\"status\"}\n").unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut buf = [0u8; 2048];
+            let n = c.read(&mut buf).unwrap();
+            let raw = String::from_utf8_lossy(&buf[..n]);
+            let line = raw.lines().next().unwrap();
+            let v: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(v["ok"], true);
+            assert!(v["result"]["policy"].is_object());
+            assert!(v["result"]["pid"].is_number());
+
+            let _ = fs::remove_file(&path);
+            server.join().unwrap();
         }
     }
 }
